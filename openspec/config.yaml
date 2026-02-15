@@ -1,0 +1,48 @@
+schema: spec-driven
+
+context: |
+  Domain: Vision-Language-Action (VLA) model for robotic manipulation
+
+  Tech stack:
+    - Python 3.12+, PyTorch 2.8+, CUDA 12.8+
+    - HuggingFace transformers, PEFT (LoRA), accelerate
+    - Flash Attention 2, DeepSpeed for distributed training
+    - LeRobot dataset format + RLDS/Open X-Embodiment compatibility
+
+  Key libraries:
+    - torch, transformers, peft, flash-attn, einops, safetensors, torchvision
+    - wandb (experiment tracking), lerobot (robotics datasets and tools)
+    - tyro (config management — typed CLI + YAML)
+    - huggingface datasets (dataset loading)
+
+  Toolchain:
+    - pixi (package manager, pyproject.toml, lockfile, it also integrates uv)
+    - voxel51/fiftyone (visualize datasets)
+
+  Evaluation:
+    - LIBERO benchmark suite
+    - SimplerEnv (sim evaluation)
+
+  MCP servers available:
+    - context7: library documentation lookup
+    - codex: GPT-5.2 code generation/analysis and peer review
+    - kindly-web-search: web search + page scraping
+    - pdf-reader: PDF text/table extraction (useful for reading papers)
+
+  Conventions:
+    - Conventional commits (feat:, fix:, docs:, refactor:, test:, chore:)
+    - Type hints on all public APIs
+    - Google-style docstrings
+    - src layout: src/yavla/
+    - Config-driven training (YAML configs + CLI overrides via tyro)
+    - Reproducible experiments (seed everything, log all hyperparams to wandb)
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
