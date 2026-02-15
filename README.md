@@ -105,7 +105,7 @@ A: You can use anything in production if you're brave enough. But please don't.
 
 **Q: What's the model performance?**
 
-A: It performs. Whether it performs *well* is a philosophical question we're not ready to answer.
+A: Our goal is to make it perform. Whether it performs *well* is a philosophical question we're not ready to answer.
 
 **Q: What's your test coverage?**
 
