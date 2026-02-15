@@ -1,0 +1,101 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "yavla"
+version = "0.1.0"
+description = "Yet Another VLA — A Vision-Language-Action model written by AI"
+requires-python = ">=3.12,<3.14"
+license = { text = "MIT" }
+dependencies = [
+    "torch>=2.7.1,<2.8",
+    "torchvision>=0.22",
+    "torchcodec>=0.2",
+    "transformers>=4.50",
+    "peft>=0.15",
+    "accelerate>=1.5",
+    "einops>=0.8",
+    "safetensors>=0.5",
+    "wandb>=0.19",
+    "lerobot",
+    "datasets>=3.0",
+    "tyro>=0.9",
+    "fiftyone>=1.2",
+    "numpy",
+    "scipy",
+    "rich",
+    "tqdm",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
+    "ruff>=0.11",
+    "mypy>=1.15",
+]
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-arm64"]
+
+[tool.pixi.dependencies]
+python = ">=3.12,<3.14"
+ffmpeg = ">=7.0,<7.1"
+
+[tool.pixi.pypi-dependencies]
+torch = ">=2.7.1,<2.8"
+torchvision = ">=0.22"
+torchcodec = ">=0.2"
+lerobot = { git = "https://github.com/huggingface/lerobot.git", rev = "6600b60e7f5cc7476ddc34beaaf0e0692f82e4b6" }
+
+[tool.pixi.feature.dev.pypi-dependencies]
+pytest = ">=8.0"
+pytest-cov = ">=6.0"
+ruff = ">=0.11"
+mypy = ">=1.15"
+
+[tool.pixi.environments]
+default = { solve-group = "default" }
+dev = { features = ["dev"], solve-group = "default" }
+
+# Linux: torch+cu128, CUDA-only deps
+[tool.pixi.target.linux-64.pypi-dependencies]
+torch = { version = ">=2.7.1,<2.8", index = "https://download.pytorch.org/whl/cu128" }
+torchvision = { version = ">=0.22", index = "https://download.pytorch.org/whl/cu128" }
+deepspeed = ">=0.16"
+flash-attn = ">=2.7"
+
+[tool.pixi.pypi-options]
+no-build-isolation = ["flash-attn"]
+
+[tool.pixi.feature.dev.tasks]
+test = "pytest tests/ -v"
+lint = "ruff check src/"
+format = "ruff format src/ tests/"
+typecheck = "mypy src/yavla/"
+
+[tool.pixi.tasks]
+train = "python scripts/train.py"
+evaluate = "python scripts/evaluate.py"
+
+[tool.ruff]
+line-length = 120
+src = ["src"]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+mypy_path = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/yavla"]

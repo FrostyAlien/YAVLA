@@ -11,14 +11,13 @@
 
 ## What is this?
 
-YAVLA is a Vision-Language-Action model built from scratch — and by "from scratch," we mean an AI coding agent read a bunch of open-source VLA repos and assembled this one for us. We just pressed Tab a lot. When I say "we", I mean me and my fellow Claude and Codex.
+YAVLA is a Vision-Language-Action model stitched together from the finest open-source parts — a Frankenstein's monster of vibe-coded imports, copy-pasted architectures, and mass-accepted Copilot suggestions. We just pressed Tab and "Allow" a lot. When I say "we", I mean me and my fellow Claude and Codex.
 
 This project exists because:
 
 1. I wanted to learn how VLA models actually work under the hood
 2. The best way to learn is to build one yourself
 3. The best way to build one yourself in 2025+ is to have Claude/Copilot build it for you while you watch
-
 <small>I lied. This README is also LLM generated so it just lists some random reasons.</small>
 
 It's turtles all the way down: an LLM helping a human build a model that combines an LLM with vision and action. We are living in the recursion that AI eventually will write AI.
@@ -119,7 +118,6 @@ A: Bold of you to assume we'll get past `import torch`.
 **Q: Aren't you worried about AI writing AI that controls robots?**
 
 A: We've already surrendered to Skynet. This repo is just our job application.
-
 
 
 

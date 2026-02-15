@@ -4,16 +4,21 @@ context: |
   Domain: Vision-Language-Action (VLA) model for robotic manipulation
 
   Tech stack:
-    - Python 3.12+, PyTorch 2.8+, CUDA 12.8+
+    - Python >=3.12,<3.14; PyTorch >=2.7.1,<2.8; CUDA 12.8 (via cu128 wheels on Linux)
     - HuggingFace transformers, PEFT (LoRA), accelerate
-    - Flash Attention 2, DeepSpeed for distributed training
-    - LeRobot dataset format + RLDS/Open X-Embodiment compatibility
+    - Flash Attention 2, DeepSpeed for distributed training (Linux only)
+    - LeRobot dataset format + RLDS/Open X-Embodiment compatibility (installed from git, pinned rev)
 
   Key libraries:
-    - torch, transformers, peft, flash-attn, einops, safetensors, torchvision
-    - wandb (experiment tracking), lerobot (robotics datasets and tools)
+    - torch, torchvision, torchcodec (video decoding; pulls ffmpeg as transitive dep)
+    - lerobot (robotics datasets and tools, from git to bypass PyPI torch version cap)
+    - transformers, peft, accelerate, flash-attn (Linux), deepspeed (Linux)
+    - einops, safetensors
+    - wandb (experiment tracking)
+    - datasets (HuggingFace — dataset loading, including LeRobot-format data)
     - tyro (config management — typed CLI + YAML)
-    - huggingface datasets (dataset loading)
+    - fiftyone (dataset visualization)
+    - numpy, scipy, rich, tqdm
 
   Toolchain:
     - pixi (package manager, pyproject.toml, lockfile, it also integrates uv)
