@@ -18,6 +18,7 @@ This project exists because:
 1. I wanted to learn how VLA models actually work under the hood
 2. The best way to learn is to build one yourself
 3. The best way to build one yourself in 2025+ is to have Claude/Copilot build it for you while you watch
+
 <small>I lied. This README is also LLM generated so it just lists some random reasons.</small>
 
 It's turtles all the way down: an LLM helping a human build a model that combines an LLM with vision and action. We are living in the recursion that AI eventually will write AI.
@@ -72,6 +73,33 @@ It's turtles all the way down: an LLM helping a human build a model that combine
 ~~Oh shit, did the Claude just fully copied Pi0.5's architecture?~~
 In the spirit of trolling, all architectural decisions will be made by committee — a committee of AI agents. The human gets one vote but it doesn't count.
 
+
+## Setup
+
+Prerequisites: [pixi](https://pixi.sh) package manager.
+
+```bash
+# Clone the repo
+git clone https://github.com/FrostyAlien/YAVLA.git
+cd yavla
+
+# Install dependencies (skip Git LFS — lerobot bundles large test artifacts we don't need)
+GIT_LFS_SKIP_SMUDGE=1 pixi install
+
+# For development (adds pytest, ruff, mypy)
+GIT_LFS_SKIP_SMUDGE=1 pixi install -e dev
+```
+
+
+```bash
+# Run tests
+pixi run -e dev test
+
+# Lint / format / typecheck
+pixi run -e dev lint
+pixi run -e dev format
+pixi run -e dev typecheck
+```
 
 ## The Vibe Coding Workflow
 
