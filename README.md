@@ -18,6 +18,7 @@ This project exists because:
 1. I wanted to learn how VLA models actually work under the hood
 2. The best way to learn is to build one yourself
 3. The best way to build one yourself in 2025+ is to have Claude/Copilot build it for you while you watch
+
 <small>I lied. This README is also LLM generated so it just lists some random reasons.</small>
 
 It's turtles all the way down: an LLM helping a human build a model that combines an LLM with vision and action. We are living in the recursion that AI eventually will write AI.
