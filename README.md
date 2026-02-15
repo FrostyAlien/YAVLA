@@ -88,28 +88,37 @@ Step 7: Repeat
 ## FAQ
 
 **Q: Did you actually write any of this code?**
+
 A: I wrote the `git commit` commands. Sometimes I also wrote the prompts. That counts, right?
 
 **Q: Is this a serious project?**
+
 A: Your questions are serious. This project are not. The code quality is whatever Claude and GPT felt like that day.
 
 **Q: How is this different from the 47 other VLA repos?**
+
 A: This one is honest about being vibe coded.
 
 **Q: Can I use this in production?**
+
 A: You can use anything in production if you're brave enough. But please don't.
 
 **Q: What's the model performance?**
+
 A: It performs. Whether it performs *well* is a philosophical question we're not ready to answer.
 
 **Q: What's your test coverage?**
+
 A: We asked Claude "does this work?" and it said "yes." 100% coverage.
 
 **Q: Do you think this model can actually be developed and deployed?**
+
 A: Bold of you to assume we'll get past `import torch`.
 
 **Q: Aren't you worried about AI writing AI that controls robots?**
+
 A: We've already surrendered to Skynet. This repo is just our job application.
+
 
 
 
