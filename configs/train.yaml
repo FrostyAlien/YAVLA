@@ -1,0 +1,13 @@
+dataset:
+  repo_id: "lerobot/aloha_sim"
+  backend: "auto"
+  batch_size: 32
+  num_workers: 4
+  persistent_workers: true
+  parquet_cache_size: 32
+  shuffle_buffer_size: 10000
+  num_interleaved_shards: 8
+  video_backend: "pyav"
+  normalize: true
+  normalize_mode: "z-score"
+  image_transforms: []

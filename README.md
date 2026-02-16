@@ -113,6 +113,20 @@ Step 6: git commit -m "it works (do not touch)"
 Step 7: Repeat
 ```
 
+## Dataset Layer (OpenSpec `dataset-layer`)
+
+YAVLA now exposes a unified data factory in `src/yavla/data/`:
+
+- `create_dataloader(DataConfig)` selects `default`, `lazy`, or `streaming` backend.
+- `lazy` is map-style Parquet-on-demand loading with `delta_timestamps` and action chunking support.
+- `streaming` is shard-interleaved iterable loading for remote-only scenarios.
+
+Important rollout constraint:
+
+- `SC-001`: when `backend="auto"` and distributed training is active, auto-selection will not choose `streaming`; it falls back to `lazy`/`default` and logs `SC-001` as the reason.
+
+Example config is available at `configs/train.yaml`.
+
 ## FAQ
 
 **Q: Did you actually write any of this code?**
