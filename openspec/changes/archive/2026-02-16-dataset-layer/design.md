@@ -63,7 +63,7 @@ LeRobot v3.0 organizes data as chunked Parquet shards (`data/chunk-{NNN}/file-{N
 - No full dataset materialization — reads Parquet shards sequentially via `ParquetFile.iter_batches()`.
 - Suitable for Hub-only scenarios where data isn't fully downloaded.
 
-**Limitations:** Does not support `delta_timestamps` or action chunking (both require random access to nearby frames). The factory SHALL force `lazy` or `default` backend when these features are configured.
+**Limitations:** Does not support `delta_timestamps` or action chunking (both require random access to nearby frames). In `backend="auto"`, the factory SHALL force `lazy` or `default` when these features are configured. If `backend="streaming"` is explicitly selected with these features, the factory SHALL raise `ValueError`.
 
 **Distributed sharding:** Each worker/rank takes a disjoint subset of shards (shard index mod world_size == rank), similar to how `DistributedSampler` partitions indices.
 

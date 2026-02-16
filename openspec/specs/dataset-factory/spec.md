@@ -15,6 +15,10 @@
 - **WHEN** Something like `DataConfig(repo_id="lerobot/aloha_sim", backend="streaming")` is passed
 - **THEN** it SHALL return a `DataLoader` wrapping a `ShardInterleavedDataset` instance
 
+#### Scenario: Explicit streaming backend rejects temporal features
+- **WHEN** `backend="streaming"` is explicitly selected and `delta_timestamps` or `action_chunk_size` is configured
+- **THEN** `create_dataloader()` SHALL raise a `ValueError` indicating temporal features require the `lazy` or `default` backend
+
 ### Requirement: Auto backend selection
 When `backend="auto"`, the factory SHALL select the backend based on dataset characteristics and configured features.
 
