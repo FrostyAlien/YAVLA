@@ -20,14 +20,14 @@ Dataset-layer documentation SHALL explain the core architecture and the most imp
 
 #### Scenario: Decision section captures operationally important choices
 - **WHEN** a reader reviews design decisions in the docs
-- **THEN** it SHALL include rationale for auto backend selection, `SC-001`, right-biased shard index lookup semantics, and streaming temporal-feature guardrails
+- **THEN** it SHALL include rationale for explicit backend selection, right-biased shard index lookup semantics, and streaming temporal-feature guardrails
 
 ### Requirement: Documentation provides actionable usage guidance
 Dataset-layer documentation SHALL include concrete usage guidance for configuration and training-loop integration.
 
 #### Scenario: Configuration examples are provided
 - **WHEN** a reader needs to configure data loading
-- **THEN** docs SHALL include example `DataConfig`/YAML patterns for at least `auto`, `lazy`, and `streaming` usage
+- **THEN** docs SHALL include example `DataConfig`/YAML patterns for at least `default`, `lazy`, and `streaming` usage
 
 #### Scenario: Epoch handoff guidance is provided
 - **WHEN** a reader integrates dataset-layer with training epochs

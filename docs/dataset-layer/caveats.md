@@ -13,8 +13,6 @@ ValueError: streaming backend does not support action_chunk_size; use lazy/defau
 
 Use `lazy` or `default` backend for any workload that requires temporal context or action chunking.
 
-Auto-selection handles this automatically — it will not pick streaming when either is configured.
-
 ## Streaming Shuffle Is Approximate
 
 The streaming shuffle buffer provides near-uniform randomness, not perfect uniform shuffling. Quality depends on two factors:
@@ -25,14 +23,6 @@ The streaming shuffle buffer provides near-uniform randomness, not perfect unifo
 For small datasets, the approximation may noticeably differ from true random shuffling. If shuffle quality is critical, use `lazy` or `default` backend with `RandomSampler` (which provides true uniform random access).
 
 At epoch end, remaining buffer contents are shuffled and yielded in shuffled order (tail flush).
-
-## SC-001: No Auto-Streaming in Distributed Mode
-
-When `backend="auto"` and distributed training is active, the factory will not auto-select `streaming`. It falls back to `lazy` or `default` and logs `SC-001` as the reason.
-
-This is a v1 rollout constraint — distributed streaming shard partitioning was deferred from initial validation scope.
-
-To use streaming in distributed mode, set `backend="streaming"` explicitly. The dataset handles rank-aware shard partitioning internally via modulo assignment (`shard_index % world_size == rank`).
 
 ## Video Decoder Cache Behavior
 
@@ -94,4 +84,4 @@ The streaming and default backends inherit version requirements from upstream Le
 
 - [`openspec/specs/streaming-dataset/spec.md`](../../openspec/specs/streaming-dataset/spec.md) — shuffle buffer, shard partitioning, temporal feature rejection, epoch seeding
 - [`openspec/specs/lazy-dataset/spec.md`](../../openspec/specs/lazy-dataset/spec.md) — Parquet caching, video decoding, version validation
-- [`openspec/specs/dataset-factory/spec.md`](../../openspec/specs/dataset-factory/spec.md) — `SC-001`, distributed sampler wiring
+- [`openspec/specs/dataset-factory/spec.md`](../../openspec/specs/dataset-factory/spec.md) — backend guardrails and distributed sampler wiring

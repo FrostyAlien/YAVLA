@@ -9,7 +9,7 @@ All data loading flows through a single entry point:
 ```python
 from yavla.data.factory import create_dataloader, DataConfig
 
-config = DataConfig(repo_id="lerobot/aloha_sim", backend="auto")
+config = DataConfig(repo_id="lerobot/aloha_sim")
 dataloader = create_dataloader(config)
 ```
 
@@ -17,7 +17,7 @@ dataloader = create_dataloader(config)
 
 1. Loads `LeRobotDatasetMetadata` for the given `repo_id`.
 2. Builds a transform pipeline from `DataConfig` settings (normalization, image augmentation, key repacking).
-3. Selects a backend (`default`, `lazy`, or `streaming`) based on config, dataset size, data locality, and distributed context.
+3. Selects a backend (`default`, `lazy`, or `streaming`) from `DataConfig` and validates backend-feature constraints.
 4. Returns a configured `torch.utils.data.DataLoader` with the appropriate dataset, sampler, and transforms attached.
 
 ## Backends
@@ -60,7 +60,7 @@ Key capabilities:
 
 Does **not** support `delta_timestamps` or `action_chunk_size` (raises `ValueError`).
 
-Best for remote-only datasets where local Parquet files are not available.
+Best for iterable shard-based loading from local parquet files.
 
 Implementation: `ShardInterleavedDataset` in `src/yavla/data/streaming.py`.
 
@@ -75,7 +75,7 @@ create_dataloader()
     ├── build_transform_pipeline(config, metadata)
     │       └── RepackTransform → NormalizeTransform → ImageTransform
     ├── plan_feature_columns(config, metadata)
-    ├── select_backend(config, metadata)
+    ├── select_backend(config)
     │       └── returns BackendSelection(backend, reason)
     │
     ├── backend == "default"  → LeRobotDataset + _TransformingMapDataset
@@ -100,7 +100,7 @@ For `streaming`:
 |-----------|------|------|
 | `DataConfig` | `src/yavla/data/factory.py` | Configuration dataclass |
 | `create_dataloader()` | `src/yavla/data/factory.py` | Factory entry point |
-| `select_backend()` | `src/yavla/data/factory.py` | Auto-selection logic |
+| `select_backend()` | `src/yavla/data/factory.py` | Backend validation and selection |
 | `build_transform_pipeline()` | `src/yavla/data/factory.py` | Transform composition |
 | `set_dataloader_epoch()` | `src/yavla/data/factory.py` | Epoch propagation helper |
 | `LazyLeRobotDataset` | `src/yavla/data/lazy.py` | Lazy map-style backend |

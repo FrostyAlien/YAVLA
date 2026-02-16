@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -28,7 +27,6 @@ from yavla.data.transforms import (
 )
 
 LOGGER = logging.getLogger(__name__)
-SC001_CONSTRAINT_ID = "SC-001"
 
 
 @dataclass(slots=True)
@@ -37,7 +35,7 @@ class DataConfig:
 
     repo_id: str
     root: str | Path | None = None
-    backend: Literal["auto", "default", "lazy", "streaming"] = "auto"
+    backend: Literal["default", "lazy", "streaming"] = "default"
     delta_timestamps: dict[str, list[float]] | None = None
     action_chunk_size: int | None = None
 
@@ -48,7 +46,6 @@ class DataConfig:
 
     parquet_cache_size: int = 32
     max_video_decoders: int = 128
-    auto_size_threshold_gb: float = 50.0
 
     shuffle_buffer_size: int = 10_000
     num_interleaved_shards: int = 8
@@ -89,72 +86,8 @@ class _TransformingMapDataset(Dataset[dict[str, Any]]):
         return self.transform(sample)
 
 
-def _dtype_num_bytes(dtype_name: str) -> int:
-    mapping = {
-        "bool": 1,
-        "uint8": 1,
-        "int8": 1,
-        "int16": 2,
-        "uint16": 2,
-        "int32": 4,
-        "uint32": 4,
-        "float32": 4,
-        "int64": 8,
-        "uint64": 8,
-        "float64": 8,
-    }
-    return mapping.get(dtype_name, 8)
-
-
-def _feature_num_elements(feature: Mapping[str, Any]) -> int:
-    shape = feature.get("shape", [])
-    if not isinstance(shape, Sequence):
-        return 1
-    elements = 1
-    for dim in shape:
-        if not isinstance(dim, int):
-            return elements
-        elements *= max(dim, 1)
-    return elements
-
-
-def estimate_uncompressed_tabular_size_bytes(metadata: LeRobotDatasetMetadata) -> int:
-    """Estimate uncompressed tabular size from metadata schema."""
-
-    total_frames = int(metadata.total_frames)
-    total_bytes = 0
-    for feature in metadata.features.values():
-        dtype_name = str(feature.get("dtype", "float32"))
-        if dtype_name in {"video", "image"}:
-            continue
-        bytes_per_value = _dtype_num_bytes(dtype_name)
-        total_bytes += total_frames * bytes_per_value * _feature_num_elements(feature)
-    return total_bytes
-
-
 def _is_distributed_active() -> bool:
     return torch.distributed.is_available() and torch.distributed.is_initialized()
-
-
-def _is_local_data_available(metadata: LeRobotDatasetMetadata, root: str | Path | None) -> bool:
-    if root is None:
-        dataset_root = Path(metadata.root)
-    else:
-        dataset_root = Path(root)
-    if not dataset_root.exists():
-        return False
-    if hasattr(metadata.episodes, "to_dict"):
-        episodes = metadata.episodes.to_dict(orient="records")
-    else:
-        episodes = metadata.episodes
-    if not episodes:
-        return False
-    first = episodes[0]
-    path = str(metadata.data_path).format(
-        chunk_index=int(first["data/chunk_index"]),
-        file_index=int(first["data/file_index"]),
-    )
-    return (dataset_root / path).exists()
 
 
 def _camera_keys_from_metadata(metadata: LeRobotDatasetMetadata) -> list[str]:
@@ -230,40 +163,22 @@ def build_transform_pipeline(config: DataConfig, metadata: LeRobotDatasetMetadat
     return compose(*transforms)
 
 
-def select_backend(config: DataConfig, metadata: LeRobotDatasetMetadata) -> BackendSelection:
-    """Select backend from config + metadata."""
+def select_backend(config: DataConfig) -> BackendSelection:
+    """Validate backend constraints and return the selected backend."""
 
-    if config.backend != "auto":
-        return BackendSelection(backend=config.backend, reason=f"explicit backend={config.backend}")
+    if config.backend == "default":
+        if config.action_chunk_size is not None:
+            raise ValueError("default backend does not support action_chunk_size; use lazy backend")
+        return BackendSelection(backend="default", reason="default backend (LeRobotDataset)")
 
-    disallow_streaming = config.delta_timestamps is not None or config.action_chunk_size is not None
-    estimated_bytes = estimate_uncompressed_tabular_size_bytes(metadata)
-    threshold_bytes = int(config.auto_size_threshold_gb * 1024 * 1024 * 1024)
-    local_data_available = _is_local_data_available(metadata, config.root)
-    distributed_active = _is_distributed_active()
+    if config.backend == "lazy":
+        return BackendSelection(backend="lazy", reason="explicit backend=lazy")
 
-    if local_data_available:
-        backend: Literal["default", "lazy", "streaming"] = "lazy" if estimated_bytes > threshold_bytes else "default"
-        reason = (
-            f"local data available + estimated size {'>' if estimated_bytes > threshold_bytes else '<='} threshold "
-            f"({estimated_bytes} bytes vs {threshold_bytes} bytes)"
-        )
-    else:
-        if disallow_streaming:
-            backend = "lazy"
-            reason = "streaming excluded by delta_timestamps/action_chunk_size"
-        else:
-            backend = "streaming"
-            reason = "local parquet shards missing; using streaming backend"
-
-    if distributed_active and backend == "streaming":
-        fallback: Literal["default", "lazy"] = "lazy" if estimated_bytes > threshold_bytes else "default"
-        reason = (
-            f"{SC001_CONSTRAINT_ID}: distributed auto-mode excludes streaming, falling back to {fallback}"
-        )
-        backend = fallback
-
-    return BackendSelection(backend=backend, reason=reason)
+    if config.delta_timestamps is not None:
+        raise ValueError("streaming backend does not support delta_timestamps; use lazy/default backend")
+    if config.action_chunk_size is not None:
+        raise ValueError("streaming backend does not support action_chunk_size; use lazy/default backend")
+    return BackendSelection(backend="streaming", reason="explicit backend=streaming")
 
 
 def create_dataloader(
@@ -276,7 +191,7 @@ def create_dataloader(
     metadata = LeRobotDatasetMetadata(repo_id=config.repo_id, root=config.root)
     transform = build_transform_pipeline(config, metadata)
     feature_columns = plan_feature_columns(config, metadata)
-    selection = select_backend(config, metadata)
+    selection = select_backend(config)
     LOGGER.info("Selected data backend: %s | reason=%s", selection.backend, selection.reason)
 
     if selection.backend == "default":
@@ -300,10 +215,6 @@ def create_dataloader(
             max_video_decoders=config.max_video_decoders,
         )
     else:
-        if config.delta_timestamps is not None:
-            raise ValueError("streaming backend does not support delta_timestamps; use lazy/default backend")
-        if config.action_chunk_size is not None:
-            raise ValueError("streaming backend does not support action_chunk_size; use lazy/default backend")
         dataset = ShardInterleavedDataset(
             repo_id=config.repo_id,
             root=config.root,

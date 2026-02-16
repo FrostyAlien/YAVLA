@@ -72,50 +72,27 @@ def _metadata_with_local_data(tmp_path: Path) -> Any:
     return metadata
 
 
-def test_select_backend_auto_small_local_defaults_to_default(tmp_path: Path) -> None:
-    metadata = _metadata_with_local_data(tmp_path)
-    config = DataConfig(repo_id="dummy/repo", root=metadata.root, backend="auto")
-    selection = select_backend(config, metadata)
+def test_select_backend_defaults_to_default() -> None:
+    config = DataConfig(repo_id="dummy/repo")
+    selection = select_backend(config)
     assert selection.backend == "default"
 
 
-def test_select_backend_auto_large_local_chooses_lazy(tmp_path: Path) -> None:
-    metadata = _metadata_with_local_data(tmp_path)
-    metadata.info["total_frames"] = 10_000_000
-    config = DataConfig(repo_id="dummy/repo", root=metadata.root, backend="auto", auto_size_threshold_gb=0.0001)
-    selection = select_backend(config, metadata)
+def test_select_backend_explicit_lazy() -> None:
+    config = DataConfig(repo_id="dummy/repo", backend="lazy")
+    selection = select_backend(config)
     assert selection.backend == "lazy"
 
 
-def test_select_backend_auto_remote_chooses_streaming_when_allowed(tmp_path: Path) -> None:
-    metadata = _metadata_with_local_data(tmp_path)
-    config = DataConfig(repo_id="dummy/repo", root=tmp_path / "missing", backend="auto")
-    selection = select_backend(config, metadata)
+def test_select_backend_explicit_streaming() -> None:
+    config = DataConfig(repo_id="dummy/repo", backend="streaming")
+    selection = select_backend(config)
     assert selection.backend == "streaming"
 
 
-def test_select_backend_sc001_distributed_auto_excludes_streaming(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    metadata = _metadata_with_local_data(tmp_path)
-    config = DataConfig(repo_id="dummy/repo", root=tmp_path / "missing", backend="auto")
-    monkeypatch.setattr("yavla.data.factory._is_distributed_active", lambda: True)
-    selection = select_backend(config, metadata)
-    assert selection.backend in {"default", "lazy"}
-    assert "SC-001" in selection.reason
-
-
-def test_select_backend_excludes_streaming_for_delta_timestamps(tmp_path: Path) -> None:
-    metadata = _metadata_with_local_data(tmp_path)
-    config = DataConfig(
-        repo_id="dummy/repo",
-        root=tmp_path / "missing",
-        backend="auto",
-        delta_timestamps={"observation.state": [-0.1, 0.0, 0.1]},
-    )
-    selection = select_backend(config, metadata)
-    assert selection.backend == "lazy"
+def test_select_backend_default_rejects_action_chunk_size() -> None:
+    with pytest.raises(ValueError, match="default backend does not support action_chunk_size"):
+        select_backend(DataConfig(repo_id="dummy/repo", action_chunk_size=2))
 
 
 def test_create_dataloader_explicit_modes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -149,6 +126,44 @@ def test_create_dataloader_streaming_rejects_temporal_features(
                 root=metadata.root,
                 backend="streaming",
                 delta_timestamps={"observation.state": [-0.1, 0.0]},
+                num_workers=0,
+            )
+        )
+
+
+def test_create_dataloader_streaming_rejects_action_chunk_size(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    metadata = _metadata_with_local_data(tmp_path)
+    _patch_factory_dependencies(monkeypatch, metadata)
+
+    with pytest.raises(ValueError, match="action_chunk_size"):
+        create_dataloader(
+            DataConfig(
+                repo_id="dummy/repo",
+                root=metadata.root,
+                backend="streaming",
+                action_chunk_size=2,
+                num_workers=0,
+            )
+        )
+
+
+def test_create_dataloader_default_rejects_action_chunk_size(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    metadata = _metadata_with_local_data(tmp_path)
+    _patch_factory_dependencies(monkeypatch, metadata)
+
+    with pytest.raises(ValueError, match="default backend does not support action_chunk_size"):
+        create_dataloader(
+            DataConfig(
+                repo_id="dummy/repo",
+                root=metadata.root,
+                backend="default",
+                action_chunk_size=2,
                 num_workers=0,
             )
         )

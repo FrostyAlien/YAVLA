@@ -12,7 +12,7 @@ This page covers `DataConfig` fields, YAML/CLI configuration, common recipes, an
 |-------|------|---------|-------------|
 | `repo_id` | `str` | *(required)* | HuggingFace dataset repository ID |
 | `root` | `str \| Path \| None` | `None` | Local data root override |
-| `backend` | `"auto" \| "default" \| "lazy" \| "streaming"` | `"auto"` | Backend selection mode |
+| `backend` | `"default" \| "lazy" \| "streaming"` | `"default"` | Dataset backend |
 | `delta_timestamps` | `dict[str, list[float]] \| None` | `None` | Temporal context offsets per feature key |
 | `action_chunk_size` | `int \| None` | `None` | Number of future action frames to assemble |
 
@@ -33,7 +33,6 @@ This page covers `DataConfig` fields, YAML/CLI configuration, common recipes, an
 |-------|------|---------|---------|
 | `parquet_cache_size` | `int` | `32` | `lazy` — LRU cache slots for ParquetFile handles |
 | `max_video_decoders` | `int` | `128` | `lazy` — max torchcodec decoders before cache flush |
-| `auto_size_threshold_gb` | `float` | `50.0` | `auto` — size threshold for default vs lazy |
 | `shuffle_buffer_size` | `int` | `10_000` | `streaming` — shuffle buffer capacity |
 | `num_interleaved_shards` | `int` | `8` | `streaming` — concurrent shard readers |
 | `streaming_parquet_batch_size` | `int` | `256` | `streaming` — rows per PyArrow batch |
@@ -57,7 +56,7 @@ This page covers `DataConfig` fields, YAML/CLI configuration, common recipes, an
 ```yaml
 dataset:
   repo_id: "lerobot/aloha_sim"
-  backend: "auto"
+  backend: "default"
   batch_size: 32
   num_workers: 4
   persistent_workers: true
@@ -78,14 +77,14 @@ python train.py --dataset.backend lazy --dataset.batch-size 64
 
 ## Common Recipes
 
-### Auto backend (most common)
+### Default backend (most common)
 
 ```python
 config = DataConfig(repo_id="lerobot/aloha_sim")
 dataloader = create_dataloader(config)
 ```
 
-The factory picks the best backend based on data locality and size.
+This uses the upstream `LeRobotDataset` backend.
 
 ### Lazy backend with temporal features
 
@@ -103,7 +102,7 @@ dataloader = create_dataloader(config)
 
 Each sample will include temporal context frames for `observation.state` and a chunk of 4 future action frames, both with padding masks at episode boundaries.
 
-### Streaming backend for remote data
+### Streaming backend for shard iteration
 
 ```python
 config = DataConfig(
@@ -115,7 +114,7 @@ config = DataConfig(
 dataloader = create_dataloader(config)
 ```
 
-No local data needed. Shards are read directly via PyArrow. Increase `shuffle_buffer_size` and `num_interleaved_shards` for better randomness on large datasets.
+Use this when you want iterable shard-based loading from local parquet shards. Increase `shuffle_buffer_size` and `num_interleaved_shards` for better randomness on large datasets.
 
 ### Custom key repacking
 

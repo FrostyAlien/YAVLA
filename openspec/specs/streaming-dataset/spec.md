@@ -1,12 +1,5 @@
 ## ADDED Requirements
 
-### Requirement: v1 simplification constraint marker
-For the first production rollout of `dataset-layer`, streaming in distributed training is constrained by `SC-001` in `openspec/changes/dataset-layer/design.md`.
-
-#### Scenario: Auto backend under distributed training
-- **WHEN** distributed training is active and `backend="auto"` is used
-- **THEN** backend selection SHALL prefer `lazy` or `default` and SHALL NOT auto-select `streaming`, with a log message that includes `SC-001`
-
 ### Requirement: Multi-shard interleaved iteration
 `ShardInterleavedDataset` SHALL implement `torch.utils.data.IterableDataset` that discovers all Parquet shards for a LeRobot v3.0 dataset, shuffles shard order per epoch, opens K shards simultaneously, and round-robin reads batches from each.
 

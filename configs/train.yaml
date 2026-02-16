@@ -1,6 +1,6 @@
 dataset:
   repo_id: "lerobot/aloha_sim"
-  backend: "auto"
+  backend: "default"
   batch_size: 32
   num_workers: 4
   persistent_workers: true

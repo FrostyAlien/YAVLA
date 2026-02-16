@@ -19,31 +19,31 @@
 - **WHEN** `backend="streaming"` is explicitly selected and `delta_timestamps` or `action_chunk_size` is configured
 - **THEN** `create_dataloader()` SHALL raise a `ValueError` indicating temporal features require the `lazy` or `default` backend
 
-### Requirement: Auto backend selection
-When `backend="auto"`, the factory SHALL select the backend based on dataset characteristics and configured features.
+### Requirement: Backend selection and guardrails
+The factory SHALL use `DataConfig.backend` directly and validate unsupported feature/backend combinations.
 
-#### Scenario: Small dataset selects default backend
-- **WHEN** `backend="auto"` and the estimated uncompressed tabular data size (computed from non-video entries in `info["features"]` schema: dtypes × shapes × `total_frames`, with video features treated as path/metadata) is below the configured threshold (default 50GB)
-- **THEN** the factory SHALL select the `default` (LeRobotDataset) backend
+#### Scenario: Default backend is used when backend is omitted
+- **WHEN** `DataConfig` is constructed with only `repo_id` (and no explicit backend)
+- **THEN** the factory SHALL use the `default` (LeRobotDataset) backend
 
-#### Scenario: Large dataset selects lazy backend
-- **WHEN** `backend="auto"` and the estimated uncompressed data size exceeds the threshold
-- **THEN** the factory SHALL select the `lazy` backend
+#### Scenario: Explicit lazy backend selection
+- **WHEN** `backend="lazy"` is configured
+- **THEN** the factory SHALL use `LazyLeRobotDataset`
 
-#### Scenario: Data not locally available selects streaming backend
-- **WHEN** `backend="auto"` and the dataset is not cached locally (Parquet files not present on disk) and neither `delta_timestamps` nor `action_chunk_size` is configured
-- **THEN** the factory SHALL select the `streaming` backend
+#### Scenario: Explicit streaming backend selection
+- **WHEN** `backend="streaming"` is configured
+- **THEN** the factory SHALL use `ShardInterleavedDataset`
 
-#### Scenario: v1 simplification excludes streaming in distributed auto mode
-- **WHEN** `backend="auto"`, distributed training is active, and selecting `streaming` would otherwise be valid
-- **THEN** the factory SHALL select `lazy` or `default` instead, and SHALL log `SC-001` as the selection reason
+#### Scenario: Default backend rejects action chunking
+- **WHEN** `backend="default"` and `action_chunk_size` is configured
+- **THEN** `create_dataloader()` SHALL raise a `ValueError` indicating action chunking requires the `lazy` backend
 
-#### Scenario: delta_timestamps or action_chunk_size excludes streaming
-- **WHEN** `backend="auto"` and `delta_timestamps` or `action_chunk_size` is configured
-- **THEN** the factory SHALL NOT select the `streaming` backend, even if data is not locally available (fall back to `lazy` which will trigger download)
+#### Scenario: Streaming backend rejects temporal features
+- **WHEN** `backend="streaming"` and `delta_timestamps` or `action_chunk_size` is configured
+- **THEN** `create_dataloader()` SHALL raise a `ValueError` indicating temporal features require the `lazy` or `default` backend
 
 #### Scenario: Backend selection logging
-- **WHEN** `backend="auto"` and a backend is selected
+- **WHEN** a backend is selected
 - **THEN** the factory SHALL log the chosen backend and the reason for the selection
 
 ### Requirement: Transform pipeline wiring
@@ -78,7 +78,7 @@ The factory SHALL compose and attach the transform pipeline to the dataset based
 
 #### Scenario: Default values
 - **WHEN** `DataConfig` is constructed with only `repo_id`
-- **THEN** `backend` SHALL default to `"auto"`, `batch_size` to `32`, `num_workers` to `4`, `normalize` to `True`
+- **THEN** `backend` SHALL default to `"default"`, `batch_size` to `32`, `num_workers` to `4`, `normalize` to `True`
 
 ### Requirement: DistributedSampler integration
 The factory SHALL configure the appropriate sampler for distributed training when a distributed process group is active.
