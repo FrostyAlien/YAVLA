@@ -7,9 +7,11 @@ from pathlib import Path
 import pandas as pd
 import pytest
 import torch
+from datasets import Dataset as HFDataset
 
 from tests.data.helpers import make_fake_metadata, write_parquet_rows
 from yavla.data.lazy import LazyLeRobotDataset
+from yavla.data.metadata_utils import metadata_records
 
 
 def _build_lazy_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[LazyLeRobotDataset, Path]:
@@ -183,6 +185,85 @@ def test_lazy_dataset_decodes_video_keys(tmp_path: Path, monkeypatch: pytest.Mon
     assert len(calls) == 1
 
 
+def test_lazy_dataset_decodes_video_key_without_embedded_timestamp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "dataset"
+    metadata = make_fake_metadata(root, episode_lengths=[1], file_assignments=[(0, 0)])
+    metadata.info["features"]["observation.images.cam"] = {"dtype": "video", "shape": []}
+    rows = [
+        {
+            "episode_index": 0,
+            "index": 0,
+            "timestamp": 0.2,
+            "frame_index": 2,
+            "task_index": 0,
+            "observation.state": [0.0, 0.0],
+            "action": [0.0, 0.0],
+            "observation.images.cam": {"path": "videos/cam.mp4"},
+        }
+    ]
+    write_parquet_rows(root / "data/chunk-000/file-000.parquet", rows)
+
+    calls: list[float] = []
+
+    def _decode_video_frames(**kwargs):
+        calls.extend(kwargs["timestamps"])
+        return torch.zeros((1, 3, 4, 4))
+
+    monkeypatch.setattr("yavla.data.lazy.LeRobotDatasetMetadata", lambda repo_id, root=None: metadata)
+    monkeypatch.setattr("yavla.data.lazy.decode_video_frames", _decode_video_frames)
+    dataset = LazyLeRobotDataset(repo_id="dummy/repo", root=root)
+    sample = dataset[0]
+
+    assert isinstance(sample["observation.images.cam"], torch.Tensor)
+    assert calls == [0.2]
+
+
+def test_lazy_dataset_decodes_video_from_episode_metadata_when_row_has_no_media_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "dataset"
+    metadata = make_fake_metadata(root, episode_lengths=[1], file_assignments=[(0, 0)])
+    metadata.info["features"]["observation.images.cam"] = {"dtype": "video", "shape": []}
+    metadata.info["video_path"] = "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4"
+    metadata.episodes = metadata.episodes.copy()
+    metadata.episodes["videos/observation.images.cam/chunk_index"] = [0]
+    metadata.episodes["videos/observation.images.cam/file_index"] = [3]
+    metadata.episodes["videos/observation.images.cam/from_timestamp"] = [1.0]
+
+    rows = [
+        {
+            "episode_index": 0,
+            "index": 0,
+            "timestamp": 0.2,
+            "frame_index": 2,
+            "task_index": 0,
+            "observation.state": [0.0, 0.0],
+            "action": [0.0, 0.0],
+        }
+    ]
+    write_parquet_rows(root / "data/chunk-000/file-000.parquet", rows)
+
+    calls: list[tuple[Path, list[float]]] = []
+
+    def _decode_video_frames(**kwargs):
+        calls.append((Path(kwargs["video_path"]), list(kwargs["timestamps"])))
+        return torch.zeros((1, 3, 4, 4))
+
+    monkeypatch.setattr("yavla.data.lazy.LeRobotDatasetMetadata", lambda repo_id, root=None: metadata)
+    monkeypatch.setattr("yavla.data.lazy.decode_video_frames", _decode_video_frames)
+    dataset = LazyLeRobotDataset(repo_id="dummy/repo", root=root)
+    sample = dataset[0]
+
+    assert isinstance(sample["observation.images.cam"], torch.Tensor)
+    assert len(calls) == 1
+    assert calls[0][0] == root / "videos/observation.images.cam/chunk-000/file-003.mp4"
+    assert calls[0][1] == pytest.approx([1.2])
+
+
 def test_lazy_dataset_task_lookup_with_numeric_dataframe_index(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -194,3 +275,22 @@ def test_lazy_dataset_task_lookup_with_numeric_dataframe_index(
 
     ds = LazyLeRobotDataset(repo_id="dummy/repo", root=root)
     assert ds[0]["task"] == "pick"
+
+
+def test_metadata_records_supports_hf_dataset_rows() -> None:
+    episodes = HFDataset.from_dict(
+        {
+            "episode_index": [0, 1],
+            "dataset_from_index": [0, 10],
+            "dataset_to_index": [10, 20],
+            "data/chunk_index": [0, 0],
+            "data/file_index": [0, 1],
+        }
+    )
+
+    records = metadata_records(episodes)
+
+    assert len(records) == 2
+    assert records[0]["episode_index"] == 0
+    assert records[1]["dataset_from_index"] == 10
+    assert records[1]["data/file_index"] == 1

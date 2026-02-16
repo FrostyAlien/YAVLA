@@ -18,7 +18,12 @@ from lerobot.datasets.video_utils import (  # type: ignore[import-untyped]
 )
 from torch.utils.data import Dataset, get_worker_info
 
-from yavla.data.metadata_utils import build_task_lookup
+from yavla.data.metadata_utils import (
+    EpisodeMediaReference,
+    build_episode_media_lookup,
+    build_task_lookup,
+    metadata_records,
+)
 from yavla.data.schema import validate_sample_schema
 
 
@@ -87,6 +92,8 @@ class LazyLeRobotDataset(Dataset[dict[str, Any]]):
         self._worker_file_cache: dict[int, collections.OrderedDict[int, pq.ParquetFile]] = {}
         self._row_group_boundaries: dict[int, list[int]] = {}
         self._task_lookup = build_task_lookup(self.meta.tasks)
+        self._media_keys = self._resolve_media_keys()
+        self._episode_media_lookup: dict[int, dict[str, EpisodeMediaReference]] = {}
         self._decoder_paths: collections.OrderedDict[str, None] = collections.OrderedDict()
         self._epoch: int = 0
 
@@ -94,17 +101,33 @@ class LazyLeRobotDataset(Dataset[dict[str, Any]]):
         self.delta_indices = self._build_delta_indices(delta_timestamps)
 
     def _iter_episode_records(self) -> list[dict[str, Any]]:
-        episodes_obj = self.meta.episodes
-        if hasattr(episodes_obj, "to_dict"):
-            records = episodes_obj.to_dict(orient="records")
-        elif isinstance(episodes_obj, list):
-            records = episodes_obj
-        else:
-            raise TypeError(f"Unsupported episodes metadata type: {type(episodes_obj)!r}")
-        return [dict(record) for record in records]
+        return metadata_records(self.meta.episodes)
+
+    def _resolve_media_keys(self) -> tuple[str, ...]:
+        keys: list[str] = []
+
+        if hasattr(self.meta, "camera_keys"):
+            keys.extend(str(key) for key in getattr(self.meta, "camera_keys"))
+        if hasattr(self.meta, "video_keys"):
+            keys.extend(str(key) for key in getattr(self.meta, "video_keys"))
+
+        if not keys:
+            keys.extend(
+                key for key, feature in self.meta.features.items() if feature.get("dtype") in {"video", "image"}
+            )
+
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for key in keys:
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(key)
+        return tuple(deduped)
 
     def _build_indexes(self) -> None:
         records = sorted(self._iter_episode_records(), key=lambda record: int(record["dataset_from_index"]))
+        self._episode_media_lookup = build_episode_media_lookup(records, self._media_keys)
         file_first_global_index: dict[tuple[int, int], int] = {}
         file_path_ids: dict[tuple[int, int], int] = {}
         file_paths: list[Path] = []
@@ -286,15 +309,25 @@ class LazyLeRobotDataset(Dataset[dict[str, Any]]):
             return None
         return self._task_lookup.get(int(task_index))
 
-    def _decode_video_field(self, value: Any) -> Any:
-        if not isinstance(value, Mapping):
-            return value
-        if "path" not in value or "timestamp" not in value:
-            return value
+    def _timestamp_from_context(
+        self,
+        *,
+        sample_timestamp: Any = None,
+        sample_frame_index: Any = None,
+    ) -> float | None:
+        if sample_timestamp is not None:
+            try:
+                return float(sample_timestamp)
+            except (TypeError, ValueError):
+                return None
+        if sample_frame_index is not None and self.meta.fps:
+            try:
+                return float(sample_frame_index) / float(self.meta.fps)
+            except (TypeError, ValueError, ZeroDivisionError):
+                return None
+        return None
 
-        raw_path = Path(str(value["path"]))
-        data_root = Path(self.meta.root) if self.root is None else self.root
-        video_path = raw_path if raw_path.is_absolute() else (data_root / raw_path)
+    def _decode_video_at_timestamp(self, *, video_path: Path, timestamp: float) -> torch.Tensor:
         if self.video_backend == "torchcodec":
             cache_key = str(video_path)
             self._decoder_paths[cache_key] = None
@@ -305,11 +338,105 @@ class LazyLeRobotDataset(Dataset[dict[str, Any]]):
 
         frames = decode_video_frames(
             video_path=video_path,
-            timestamps=[float(value["timestamp"])],
+            timestamps=[float(timestamp)],
             tolerance_s=self.tolerance_s,
             backend=self.video_backend,
         )
         return frames.squeeze(0)
+
+    def _decode_from_row_payload(
+        self,
+        value: Any,
+        *,
+        sample_timestamp: Any = None,
+        sample_frame_index: Any = None,
+    ) -> torch.Tensor | None:
+        raw_path: Path | None = None
+        timestamp_value: float | None = None
+
+        if isinstance(value, Mapping):
+            if "path" not in value:
+                return None
+            raw_path = Path(str(value["path"]))
+            if "timestamp" in value:
+                try:
+                    timestamp_value = float(value["timestamp"])
+                except (TypeError, ValueError):
+                    timestamp_value = None
+        elif isinstance(value, (str, Path)):
+            raw_path = Path(str(value))
+        else:
+            return None
+
+        if raw_path is None:
+            return None
+        if timestamp_value is None:
+            timestamp_value = self._timestamp_from_context(
+                sample_timestamp=sample_timestamp,
+                sample_frame_index=sample_frame_index,
+            )
+        if timestamp_value is None:
+            return None
+
+        data_root = Path(self.meta.root) if self.root is None else self.root
+        video_path = raw_path if raw_path.is_absolute() else (data_root / raw_path)
+        return self._decode_video_at_timestamp(video_path=video_path, timestamp=timestamp_value)
+
+    def _resolve_episode_media_path(self, media_key: str, episode_index: int) -> tuple[Path, float] | None:
+        video_path_template = getattr(self.meta, "video_path", None)
+        if video_path_template is None and hasattr(self.meta, "info"):
+            video_path_template = self.meta.info.get("video_path")
+        if not video_path_template:
+            return None
+        episode_media = self._episode_media_lookup.get(episode_index)
+        if episode_media is None:
+            return None
+        reference = episode_media.get(media_key)
+        if reference is None:
+            return None
+
+        rel_path = str(video_path_template).format(
+            video_key=media_key,
+            chunk_index=reference.chunk_index,
+            file_index=reference.file_index,
+        )
+        data_root = Path(self.meta.root) if self.root is None else self.root
+        return data_root / rel_path, reference.from_timestamp
+
+    def _resolve_media_value(
+        self,
+        *,
+        media_key: str,
+        row_value: Any,
+        episode_index: Any = None,
+        sample_timestamp: Any = None,
+        sample_frame_index: Any = None,
+    ) -> Any:
+        decoded_from_row = self._decode_from_row_payload(
+            row_value,
+            sample_timestamp=sample_timestamp,
+            sample_frame_index=sample_frame_index,
+        )
+        if decoded_from_row is not None:
+            return decoded_from_row
+
+        timestamp_value = self._timestamp_from_context(
+            sample_timestamp=sample_timestamp,
+            sample_frame_index=sample_frame_index,
+        )
+        if timestamp_value is None:
+            return row_value
+
+        try:
+            episode_idx = int(episode_index)
+        except (TypeError, ValueError):
+            return row_value
+
+        media_path = self._resolve_episode_media_path(media_key, episode_idx)
+        if media_path is None:
+            return row_value
+        video_path, from_timestamp = media_path
+        return self._decode_video_at_timestamp(video_path=video_path, timestamp=from_timestamp + timestamp_value)
 
     def set_epoch(self, epoch: int) -> None:
         """Track epoch and clear shared decoder cache at boundaries."""
@@ -365,8 +492,19 @@ class LazyLeRobotDataset(Dataset[dict[str, Any]]):
                 pad_mask.append(is_pad)
 
             queried_rows = self._fetch_rows(query_indices)
-            if key in self.meta.video_keys:
-                values = [self._decode_video_field(row.get(key)) for row in queried_rows]
+            if key in self._media_keys:
+                values = []
+                for row in queried_rows:
+                    resolved_value = self._resolve_media_value(
+                        media_key=key,
+                        row_value=row.get(key),
+                        episode_index=row.get("episode_index"),
+                        sample_timestamp=row.get("timestamp"),
+                        sample_frame_index=row.get("frame_index"),
+                    )
+                    if isinstance(resolved_value, (str, Path, Mapping)) or resolved_value is None:
+                        raise ValueError(f"Unable to decode media key '{key}' for temporal query")
+                    values.append(resolved_value)
             else:
                 values = [row.get(key) for row in queried_rows]
 
@@ -399,9 +537,16 @@ class LazyLeRobotDataset(Dataset[dict[str, Any]]):
     def _build_sample(self, row: dict[str, Any], idx: int) -> dict[str, Any]:
         sample = dict(row)
 
-        for video_key in self.meta.video_keys:
-            if video_key in sample:
-                sample[video_key] = self._decode_video_field(sample[video_key])
+        for media_key in self._media_keys:
+            resolved_media = self._resolve_media_value(
+                media_key=media_key,
+                row_value=sample.get(media_key),
+                episode_index=sample.get("episode_index"),
+                sample_timestamp=sample.get("timestamp"),
+                sample_frame_index=sample.get("frame_index"),
+            )
+            if media_key in sample or resolved_media is not None:
+                sample[media_key] = resolved_media
 
         task_name = self._task_name(sample.get("task_index"))
         if task_name is not None:

@@ -152,6 +152,95 @@ def test_streaming_decodes_video_keys(tmp_path: Path, monkeypatch: pytest.Monkey
     assert len(calls) == 1
 
 
+def test_streaming_decodes_video_key_without_embedded_timestamp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "dataset"
+    metadata = make_fake_metadata(root, episode_lengths=[1], file_assignments=[(0, 0)])
+    metadata.info["features"]["observation.images.cam"] = {"dtype": "video", "shape": []}
+    rows = [
+        {
+            "episode_index": 0,
+            "index": 0,
+            "timestamp": 0.3,
+            "frame_index": 3,
+            "task_index": 0,
+            "observation.state": [0.0, 0.0],
+            "action": [0.0, 0.0],
+            "observation.images.cam": {"path": "videos/cam.mp4"},
+        }
+    ]
+    write_parquet_rows(root / "data/chunk-000/file-000.parquet", rows)
+
+    calls: list[float] = []
+
+    def _decode_video_frames(**kwargs):
+        calls.extend(kwargs["timestamps"])
+        return torch.zeros((1, 3, 4, 4))
+
+    monkeypatch.setattr("yavla.data.streaming.LeRobotDatasetMetadata", lambda repo_id, root=None: metadata)
+    monkeypatch.setattr("yavla.data.streaming.decode_video_frames", _decode_video_frames)
+    dataset = ShardInterleavedDataset(
+        repo_id="dummy/repo",
+        root=root,
+        shuffle_buffer_size=1,
+        num_interleaved_shards=1,
+    )
+    sample = next(iter(dataset))
+
+    assert isinstance(sample["observation.images.cam"], torch.Tensor)
+    assert calls == [0.3]
+
+
+def test_streaming_decodes_video_from_episode_metadata_when_row_has_no_media_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "dataset"
+    metadata = make_fake_metadata(root, episode_lengths=[1], file_assignments=[(0, 0)])
+    metadata.info["features"]["observation.images.cam"] = {"dtype": "video", "shape": []}
+    metadata.info["video_path"] = "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4"
+    metadata.episodes = metadata.episodes.copy()
+    metadata.episodes["videos/observation.images.cam/chunk_index"] = [0]
+    metadata.episodes["videos/observation.images.cam/file_index"] = [3]
+    metadata.episodes["videos/observation.images.cam/from_timestamp"] = [1.0]
+
+    rows = [
+        {
+            "episode_index": 0,
+            "index": 0,
+            "timestamp": 0.3,
+            "frame_index": 3,
+            "task_index": 0,
+            "observation.state": [0.0, 0.0],
+            "action": [0.0, 0.0],
+        }
+    ]
+    write_parquet_rows(root / "data/chunk-000/file-000.parquet", rows)
+
+    calls: list[tuple[Path, list[float]]] = []
+
+    def _decode_video_frames(**kwargs):
+        calls.append((Path(kwargs["video_path"]), list(kwargs["timestamps"])))
+        return torch.zeros((1, 3, 4, 4))
+
+    monkeypatch.setattr("yavla.data.streaming.LeRobotDatasetMetadata", lambda repo_id, root=None: metadata)
+    monkeypatch.setattr("yavla.data.streaming.decode_video_frames", _decode_video_frames)
+    dataset = ShardInterleavedDataset(
+        repo_id="dummy/repo",
+        root=root,
+        shuffle_buffer_size=1,
+        num_interleaved_shards=1,
+    )
+    sample = next(iter(dataset))
+
+    assert isinstance(sample["observation.images.cam"], torch.Tensor)
+    assert len(calls) == 1
+    assert calls[0][0] == root / "videos/observation.images.cam/chunk-000/file-003.mp4"
+    assert calls[0][1] == pytest.approx([1.3])
+
+
 def test_streaming_task_lookup_with_numeric_dataframe_index(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

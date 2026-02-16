@@ -16,7 +16,12 @@ from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata  # type: ign
 from lerobot.datasets.video_utils import decode_video_frames  # type: ignore[import-untyped]
 from torch.utils.data import IterableDataset, get_worker_info
 
-from yavla.data.metadata_utils import build_task_lookup
+from yavla.data.metadata_utils import (
+    EpisodeMediaReference,
+    build_episode_media_lookup,
+    build_task_lookup,
+    metadata_records,
+)
 from yavla.data.schema import validate_sample_schema
 
 
@@ -68,20 +73,39 @@ class ShardInterleavedDataset(IterableDataset[dict[str, Any]]):
         self._epoch_state = multiprocessing.Value("q", 0, lock=True)
 
         self.meta = LeRobotDatasetMetadata(repo_id=repo_id, root=root)
+        self._media_keys = self._resolve_media_keys()
+        self._episode_media_lookup: dict[int, dict[str, EpisodeMediaReference]] = {}
         self._shard_paths = self._discover_shards()
         self._task_lookup = self._build_task_lookup()
 
     def _build_task_lookup(self) -> dict[int, str]:
         return build_task_lookup(self.meta.tasks)
 
+    def _resolve_media_keys(self) -> tuple[str, ...]:
+        keys: list[str] = []
+
+        if hasattr(self.meta, "camera_keys"):
+            keys.extend(str(key) for key in getattr(self.meta, "camera_keys"))
+        if hasattr(self.meta, "video_keys"):
+            keys.extend(str(key) for key in getattr(self.meta, "video_keys"))
+
+        if not keys:
+            keys.extend(
+                key for key, feature in self.meta.features.items() if feature.get("dtype") in {"video", "image"}
+            )
+
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for key in keys:
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(key)
+        return tuple(deduped)
+
     def _discover_shards(self) -> list[Path]:
-        episodes = self.meta.episodes
-        if hasattr(episodes, "to_dict"):
-            records = episodes.to_dict(orient="records")
-        elif isinstance(episodes, list):
-            records = episodes
-        else:
-            raise TypeError(f"Unsupported episodes metadata type: {type(episodes)!r}")
+        records = metadata_records(self.meta.episodes)
+        self._episode_media_lookup = build_episode_media_lookup(records, self._media_keys)
 
         ordered_keys: collections.OrderedDict[tuple[int, int], None] = collections.OrderedDict()
         for record in records:
@@ -151,27 +175,140 @@ class ShardInterleavedDataset(IterableDataset[dict[str, Any]]):
             for row in batch.to_pylist():
                 yield dict(row)
 
-    def _decode_video_field(self, value: Any) -> Any:
-        if not isinstance(value, Mapping):
-            return value
-        if "path" not in value or "timestamp" not in value:
-            return value
-        raw_path = Path(str(value["path"]))
-        data_root = Path(self.meta.root) if self.root is None else self.root
-        video_path = raw_path if raw_path.is_absolute() else data_root / raw_path
+    def _timestamp_from_context(
+        self,
+        *,
+        sample_timestamp: Any = None,
+        sample_frame_index: Any = None,
+    ) -> float | None:
+        if sample_timestamp is not None:
+            try:
+                return float(sample_timestamp)
+            except (TypeError, ValueError):
+                return None
+        if sample_frame_index is not None and self.meta.fps:
+            try:
+                return float(sample_frame_index) / float(self.meta.fps)
+            except (TypeError, ValueError, ZeroDivisionError):
+                return None
+        return None
+
+    def _decode_video_at_timestamp(self, *, video_path: Path, timestamp: float) -> torch.Tensor:
         frames = decode_video_frames(
             video_path=video_path,
-            timestamps=[float(value["timestamp"])],
+            timestamps=[float(timestamp)],
             tolerance_s=self.tolerance_s,
             backend=self.video_backend,
         )
         return frames.squeeze(0)
 
+    def _decode_from_row_payload(
+        self,
+        value: Any,
+        *,
+        sample_timestamp: Any = None,
+        sample_frame_index: Any = None,
+    ) -> torch.Tensor | None:
+        raw_path: Path | None = None
+        timestamp_value: float | None = None
+
+        if isinstance(value, Mapping):
+            if "path" not in value:
+                return None
+            raw_path = Path(str(value["path"]))
+            if "timestamp" in value:
+                try:
+                    timestamp_value = float(value["timestamp"])
+                except (TypeError, ValueError):
+                    timestamp_value = None
+        elif isinstance(value, (str, Path)):
+            raw_path = Path(str(value))
+        else:
+            return None
+
+        if raw_path is None:
+            return None
+        if timestamp_value is None:
+            timestamp_value = self._timestamp_from_context(
+                sample_timestamp=sample_timestamp,
+                sample_frame_index=sample_frame_index,
+            )
+        if timestamp_value is None:
+            return None
+
+        data_root = Path(self.meta.root) if self.root is None else self.root
+        video_path = raw_path if raw_path.is_absolute() else data_root / raw_path
+        return self._decode_video_at_timestamp(video_path=video_path, timestamp=timestamp_value)
+
+    def _resolve_episode_media_path(self, media_key: str, episode_index: int) -> tuple[Path, float] | None:
+        video_path_template = getattr(self.meta, "video_path", None)
+        if video_path_template is None and hasattr(self.meta, "info"):
+            video_path_template = self.meta.info.get("video_path")
+        if not video_path_template:
+            return None
+
+        episode_media = self._episode_media_lookup.get(episode_index)
+        if episode_media is None:
+            return None
+        reference = episode_media.get(media_key)
+        if reference is None:
+            return None
+
+        rel_path = str(video_path_template).format(
+            video_key=media_key,
+            chunk_index=reference.chunk_index,
+            file_index=reference.file_index,
+        )
+        data_root = Path(self.meta.root) if self.root is None else self.root
+        return data_root / rel_path, reference.from_timestamp
+
+    def _resolve_media_value(
+        self,
+        *,
+        media_key: str,
+        row_value: Any,
+        episode_index: Any = None,
+        sample_timestamp: Any = None,
+        sample_frame_index: Any = None,
+    ) -> Any:
+        decoded_from_row = self._decode_from_row_payload(
+            row_value,
+            sample_timestamp=sample_timestamp,
+            sample_frame_index=sample_frame_index,
+        )
+        if decoded_from_row is not None:
+            return decoded_from_row
+
+        timestamp_value = self._timestamp_from_context(
+            sample_timestamp=sample_timestamp,
+            sample_frame_index=sample_frame_index,
+        )
+        if timestamp_value is None:
+            return row_value
+
+        try:
+            episode_idx = int(episode_index)
+        except (TypeError, ValueError):
+            return row_value
+
+        media_path = self._resolve_episode_media_path(media_key, episode_idx)
+        if media_path is None:
+            return row_value
+        video_path, from_timestamp = media_path
+        return self._decode_video_at_timestamp(video_path=video_path, timestamp=from_timestamp + timestamp_value)
+
     def _prepare_sample(self, row: dict[str, Any]) -> dict[str, Any]:
         sample = dict(row)
-        for video_key in self.meta.video_keys:
-            if video_key in sample:
-                sample[video_key] = self._decode_video_field(sample[video_key])
+        for media_key in self._media_keys:
+            resolved_media = self._resolve_media_value(
+                media_key=media_key,
+                row_value=sample.get(media_key),
+                episode_index=sample.get("episode_index"),
+                sample_timestamp=sample.get("timestamp"),
+                sample_frame_index=sample.get("frame_index"),
+            )
+            if media_key in sample or resolved_media is not None:
+                sample[media_key] = resolved_media
 
         task_index = sample.get("task_index")
         if isinstance(task_index, (int, np.integer)):
