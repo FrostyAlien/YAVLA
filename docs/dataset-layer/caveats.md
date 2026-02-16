@@ -42,6 +42,39 @@ The streaming backend does not implement dataset-level decoder-cache management.
 
 Use `pyav` (the default) unless you have a specific reason to use `torchcodec`. The torchcodec cache can grow unbounded if not managed, and the lazy backend's eviction strategy is a full cache flush rather than per-entry eviction.
 
+## Media Source Resolution
+
+Both custom backends (`LazyLeRobotDataset` and `ShardInterleavedDataset`) resolve media keys from two sources:
+
+- **Row payload path**: If a sample row includes a media value with a path (for example `{"path": ...}`), that path is decoded directly.
+- **Canonical LeRobot v3 episode metadata path**: If a row does not include the media key, the backend falls back to episode metadata fields:
+  - `videos/{media_key}/chunk_index`
+  - `videos/{media_key}/file_index`
+  - `videos/{media_key}/from_timestamp`
+  with `video_path` from dataset metadata to build the MP4 path.
+
+Timestamp selection for row payload decoding follows this order:
+
+1. payload timestamp (`value["timestamp"]`)
+2. sample timestamp (`sample["timestamp"]`)
+3. `sample["frame_index"] / fps`
+
+When decoding via canonical episode metadata, the query timestamp is shifted by episode offset:
+
+- `decode_timestamp = from_timestamp + sample_timestamp`
+
+### Difference vs default LeRobot backend
+
+- **Parity**: Both implementations apply episode-level `from_timestamp` shifting when resolving frames from canonical metadata.
+- **Intentional extension in YAVLA backends**: Lazy/streaming fallback handles missing row media payloads by resolving directly from canonical episode metadata, so real datasets where data parquet omits media columns still decode correctly.
+
+### Memory behavior
+
+This media source fallback does not change initialization memory behavior:
+
+- no eager frame-level parquet load is introduced during dataset `__init__`
+- frame rows and video frames are loaded on sample access
+
 ## Parquet File Handle Caching (Lazy Backend)
 
 The lazy backend maintains an LRU cache of `ParquetFile` handles per DataLoader worker. Each worker has its own cache (keyed by `worker_info.id`), so total open file handles scale as `num_workers × parquet_cache_size`.

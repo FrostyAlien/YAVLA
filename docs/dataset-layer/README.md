@@ -16,7 +16,7 @@ Docs index: [Documentation Home](../README.md)
 | [Architecture](architecture.md) | Backend model, `create_dataloader()` flow, and how `default` / `lazy` / `streaming` fit together. |
 | [Backend Decision Guide](backend-guide.md) | How to choose a backend explicitly and understand backend guardrails. |
 | [Usage and Configuration](usage.md) | `DataConfig` fields, YAML examples, epoch handoff, and common recipes. |
-| [Must-Know Caveats](caveats.md) | Streaming shuffle quality, unsupported temporal features, decoder/cache behavior, and DDP nuances. |
+| [Must-Know Caveats](caveats.md) | Streaming shuffle quality, unsupported temporal features, media source resolution, decoder/cache behavior, and DDP nuances. |
 
 ## Normative References
 
