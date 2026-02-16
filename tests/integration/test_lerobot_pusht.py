@@ -280,7 +280,30 @@ def test_default_backend_loads(pusht_root: Path) -> None:
     validate_sample_schema(sample, require_task_name=False)
 
 
-def test_factory_creates_dataloader(pusht_root: Path) -> None:
+def test_default_backend_decodes_video(pusht_root: Path) -> None:
+    metadata = _meta(pusht_root)
+    camera_keys = _camera_keys(metadata)
+    if not camera_keys:
+        pytest.skip(f"{REPO_ID} metadata did not expose camera/video keys")
+
+    dataset = LeRobotDataset(repo_id=REPO_ID, root=pusht_root, video_backend="pyav")
+    search_limit = min(len(dataset), 256)
+    saw_raw_payload = False
+    for idx in range(search_limit):
+        sample = dataset[idx]
+        if _decoded_media_tensors(sample, camera_keys):
+            return
+        for key in camera_keys:
+            value = sample.get(key)
+            if _is_raw_media_payload(value):
+                saw_raw_payload = True
+
+    if saw_raw_payload:
+        pytest.skip("LeRobotDataset exposed raw media payloads but no decoded 3-D tensors in first 256 samples")
+    pytest.fail("expected at least one decoded 3-D media tensor in default backend samples")
+
+
+def test_factory_creates_lazy_dataloader(pusht_root: Path) -> None:
     dataloader = create_dataloader(
         DataConfig(
             repo_id=REPO_ID,
@@ -298,6 +321,40 @@ def test_factory_creates_dataloader(pusht_root: Path) -> None:
     for key in REQUIRED_METADATA_KEYS.union({"task_index"}):
         assert key in batch
     assert torch.as_tensor(batch["index"]).shape[0] == 2
+
+
+def test_factory_creates_default_dataloader(pusht_root: Path) -> None:
+    metadata = _meta(pusht_root)
+    camera_keys = _camera_keys(metadata)
+    if not camera_keys:
+        pytest.skip(f"{REPO_ID} metadata did not expose camera/video keys")
+    if not _baseline_has_decoded_media_tensor(pusht_root, camera_keys):
+        pytest.skip("LeRobotDataset did not expose decoded 3-D media tensors in first 256 samples")
+
+    dataloader = create_dataloader(
+        DataConfig(
+            repo_id=REPO_ID,
+            root=pusht_root,
+            backend="default",
+            batch_size=2,
+            num_workers=0,
+            normalize=False,
+        )
+    )
+
+    assert getattr(dataloader, "yavla_backend") == "default"
+    batch = next(iter(dataloader))
+    assert isinstance(batch, dict)
+    for key in REQUIRED_METADATA_KEYS.union({"task_index"}):
+        assert key in batch
+    assert torch.as_tensor(batch["index"]).shape[0] == 2
+
+    decoded: list[str] = []
+    for key in camera_keys:
+        value = batch.get(key)
+        if isinstance(value, torch.Tensor) and value.ndim == 4 and value.dtype in {torch.float32, torch.uint8}:
+            decoded.append(key)
+    assert decoded, "expected at least one decoded 4-D batched media tensor in default dataloader batch"
 
 
 def test_normalize_transform_on_real_data(pusht_root: Path) -> None:

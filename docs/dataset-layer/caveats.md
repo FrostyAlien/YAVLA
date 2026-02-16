@@ -68,6 +68,15 @@ When decoding via canonical episode metadata, the query timestamp is shifted by 
 - **Parity**: Both implementations apply episode-level `from_timestamp` shifting when resolving frames from canonical metadata.
 - **Intentional extension in YAVLA backends**: Lazy/streaming fallback handles missing row media payloads by resolving directly from canonical episode metadata, so real datasets where data parquet omits media columns still decode correctly.
 
+### Integration parity checks
+
+The integration suite now checks default backend media decoding in two places:
+
+- direct `LeRobotDataset` sample access
+- `create_dataloader(..., backend=\"default\")` first-batch output
+
+Both checks require decoded tensor outputs when baseline decoding is available. If codec/runtime support is unavailable in the environment, decode-specific assertions are skipped with explicit reasons to avoid false negatives.
+
 ### Memory behavior
 
 This media source fallback does not change initialization memory behavior:
