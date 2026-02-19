@@ -34,15 +34,15 @@ The transform system SHALL define a `DataTransformFn` protocol: any callable wit
 - **THEN** those keys SHALL be preserved unchanged in the output
 
 ### Requirement: NormalizeTransform applies statistical normalization
-`NormalizeTransform` SHALL normalize specified feature keys using statistics (mean, std or min, max) from `LeRobotDatasetMetadata.stats`.
+`NormalizeTransform` SHALL normalize specified feature keys using statistics (mean, std or min, max) from `LeRobotDatasetMetadata.stats`. Output SHALL always be `torch.Tensor` with dtype `float32`.
 
 #### Scenario: Z-score normalization
 - **WHEN** `NormalizeTransform(stats, mode="z-score", keys=["observation.state"])` is applied
-- **THEN** `observation.state` SHALL be transformed to `(value - mean) / std` using the corresponding stats
+- **THEN** `observation.state` SHALL be transformed to `(value - mean) / std` using the corresponding stats, output as `torch.Tensor`
 
 #### Scenario: Min-max normalization
 - **WHEN** `NormalizeTransform(stats, mode="min-max", keys=["action"])` is applied
-- **THEN** `action` SHALL be transformed to `(value - min) / (max - min)`, mapping to [0, 1] range
+- **THEN** `action` SHALL be transformed to `(value - min) / (max - min)`, mapping to [0, 1] range, output as `torch.Tensor`
 
 #### Scenario: Keys without stats are skipped
 - **WHEN** a key in the sample has no corresponding entry in `stats`
@@ -56,16 +56,28 @@ The transform system SHALL define a `DataTransformFn` protocol: any callable wit
 - **WHEN** `NormalizeTransform(stats, mode="min-max", keys=[...])` is applied and a target key has `max == min`
 - **THEN** that key SHALL normalize to zeros for those elements (no division by zero)
 
+#### Scenario: Numpy input produces tensor output
+- **WHEN** `NormalizeTransform` is applied to a sample where `action` is a `numpy.ndarray`
+- **THEN** the output `action` SHALL be a `torch.Tensor` with dtype `float32`, NOT converted back to numpy
+
+#### Scenario: Numpy scalar input produces tensor output
+- **WHEN** `NormalizeTransform` is applied to a sample where a key's value is a numpy scalar (`np.int64`, `np.bool_`, etc.)
+- **THEN** `_to_tensor` SHALL convert it via `value.item()` before `torch.as_tensor`, producing a `torch.Tensor`
+
+#### Scenario: Non-normalized keys pass through unchanged
+- **WHEN** a key has no matching stats entry or is not in the target key set
+- **THEN** that key's value SHALL pass through with its original type unchanged
+
 ### Requirement: UnnormalizeTransform inverts normalization
-`UnnormalizeTransform` SHALL invert the normalization applied by `NormalizeTransform`, for use during inference to convert model outputs back to original scale.
+`UnnormalizeTransform` SHALL invert the normalization applied by `NormalizeTransform`, for use during inference to convert model outputs back to original scale. Output SHALL always be `torch.Tensor` with dtype `float32`.
 
 #### Scenario: Z-score unnormalization roundtrip
 - **WHEN** a value is normalized with z-score and then unnormalized with the same stats
-- **THEN** the result SHALL equal the original value (within floating-point tolerance)
+- **THEN** the result SHALL equal the original value within float32 tolerance (`atol=1e-6`), output as `torch.Tensor`
 
 #### Scenario: Min-max unnormalization roundtrip
 - **WHEN** a value is normalized with min-max and then unnormalized with the same stats
-- **THEN** the result SHALL equal the original value (within floating-point tolerance)
+- **THEN** the result SHALL equal the original value within float32 tolerance (`atol=1e-6`), output as `torch.Tensor`
 
 #### Scenario: Zero-variance and zero-range unnormalization
 - **WHEN** `UnnormalizeTransform` is applied for stats with `std == 0` (z-score) or `max == min` (min-max)
@@ -81,3 +93,18 @@ The transform system SHALL define a `DataTransformFn` protocol: any callable wit
 #### Scenario: Multiple camera keys
 - **WHEN** the sample contains multiple camera keys (`image_left`, `image_right`) and both are in `camera_keys`
 - **THEN** the same transform pipeline SHALL be applied independently to each camera key
+
+### Requirement: Smart key filtering when keys=None
+When `NormalizeTransform.keys` is `None`, the transform SHALL iterate only keys present in both `self.stats` and the sample dict, using order-preserving filtering over `self.stats` keys.
+
+#### Scenario: Default keys filters to stats intersection
+- **WHEN** `NormalizeTransform(stats, keys=None)` is applied to a sample with 12 keys, where only `action` and `observation.state` have stats entries
+- **THEN** only `action` and `observation.state` SHALL be processed
+
+#### Scenario: Iteration order follows stats key order
+- **WHEN** `keys=None` and stats contains keys `["action", "observation.state"]`
+- **THEN** the iteration order SHALL follow the stats key order, not the sample key order
+
+#### Scenario: Explicit keys override still works
+- **WHEN** `NormalizeTransform(stats, keys=["action"])` is applied
+- **THEN** only `action` SHALL be processed, regardless of what other keys exist in stats

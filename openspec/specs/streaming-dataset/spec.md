@@ -45,7 +45,7 @@ When used with multi-worker `DataLoader`, each worker within a rank SHALL proces
 - **THEN** each worker SHALL process 2 shards, determined by `worker_info.id` within the rank's shard subset
 
 ### Requirement: Parquet row reading via PyArrow
-Each shard reader SHALL read rows from Parquet files using `pyarrow.parquet.ParquetFile.iter_batches()` with column pruning to only load needed feature columns.
+Each shard reader SHALL read rows from Parquet files using `pyarrow.parquet.ParquetFile.iter_batches()` with column pruning, converting batches per-column for optimal performance.
 
 #### Scenario: Column pruning
 - **WHEN** the transform pipeline only requires `observation.state` and `action` columns
@@ -54,6 +54,14 @@ Each shard reader SHALL read rows from Parquet files using `pyarrow.parquet.Parq
 #### Scenario: Batch size for shard reading
 - **WHEN** a shard reader iterates over a Parquet file
 - **THEN** it SHALL read in batches (default 256 rows) rather than row-by-row, to amortize I/O overhead
+
+#### Scenario: Primitive numeric columns use numpy conversion
+- **WHEN** a batch contains primitive numeric columns (int64, float64)
+- **THEN** each column SHALL be converted via `column.to_numpy(zero_copy_only=False)` and per-row values SHALL be numpy scalars obtained by indexing
+
+#### Scenario: List/string columns use per-column to_pylist
+- **WHEN** a batch contains list-type or string columns
+- **THEN** each such column SHALL be converted via `column.to_pylist()` at the column level
 
 ### Requirement: Video frame decoding in streaming mode
 When the dataset contains video keys, the iterator SHALL decode video frames using LeRobot's `decode_video_frames()` for each yielded sample.

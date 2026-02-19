@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: End-to-end throughput measurement
-`scripts/bench_dataloader.py` SHALL measure samples/sec throughput for each dataset backend using `torch.utils.benchmark.Timer`.
+`scripts/bench_dataloader.py` SHALL measure samples/sec throughput for each dataset backend by timing steady-state DataLoader iteration.
 
 #### Scenario: Default throughput measurement
 - **WHEN** the script is run with `--repo-id <dataset>`
