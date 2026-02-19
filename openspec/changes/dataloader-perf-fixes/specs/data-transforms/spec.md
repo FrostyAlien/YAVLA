@@ -15,6 +15,10 @@
 - **WHEN** `NormalizeTransform` is applied to a sample where a key's value is already a `torch.Tensor` (any dtype, e.g., `float64`)
 - **THEN** the output SHALL be a `torch.Tensor` with dtype `float32` (normalization always operates in float32)
 
+#### Scenario: Numpy scalar input produces tensor output
+- **WHEN** `NormalizeTransform` is applied to a sample where a key's value is a numpy scalar (`np.int64`, `np.bool_`, etc.)
+- **THEN** `_to_tensor` SHALL convert it via `value.item()` before `torch.as_tensor`, producing a `torch.Tensor`
+
 #### Scenario: Non-normalized keys pass through unchanged
 - **WHEN** a key has no matching stats entry or is not in the target key set
 - **THEN** that key's value SHALL pass through with its original type unchanged
