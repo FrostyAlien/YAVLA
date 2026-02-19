@@ -73,23 +73,11 @@ def _to_tensor(value: Any) -> torch.Tensor:
         return torch.from_numpy(value)
     if isinstance(value, (list, tuple)):
         return torch.as_tensor(value)
+    if isinstance(value, np.generic):
+        return torch.as_tensor(value.item())
     if isinstance(value, (int, float, bool)):
         return torch.as_tensor(value)
     raise TypeError(f"Unsupported value type for normalization: {type(value)!r}")
-
-
-def _restore_type(reference: Any, value: torch.Tensor) -> Any:
-    if isinstance(reference, torch.Tensor):
-        return value.to(dtype=reference.dtype)
-    if isinstance(reference, np.ndarray):
-        return value.detach().cpu().numpy().astype(reference.dtype, copy=False)
-    if isinstance(reference, bool):
-        return bool(value.item())
-    if isinstance(reference, int):
-        return int(value.item())
-    if isinstance(reference, float):
-        return float(value.item())
-    return value
 
 
 def _extract_stat(stats_entry: Mapping[str, Any], primary: str, fallback: str | None = None) -> torch.Tensor | None:
@@ -114,14 +102,13 @@ class NormalizeTransform:
 
     def __call__(self, sample: Sample) -> Sample:
         output = dict(sample)
-        target_keys = self.keys if self.keys is not None else tuple(sample.keys())
+        target_keys = self.keys if self.keys is not None else [k for k in self.stats if k in sample]
         for key in target_keys:
             if key not in output or key not in self.stats:
                 continue
 
             stats_entry = self.stats[key]
-            value_reference = output[key]
-            value_tensor = _to_tensor(value_reference).to(dtype=torch.float32)
+            value_tensor = _to_tensor(output[key]).to(dtype=torch.float32)
 
             if self.mode == "z-score":
                 mean = _extract_stat(stats_entry, "mean")
@@ -137,7 +124,7 @@ class NormalizeTransform:
                 denom = maximum - minimum
                 normalized = torch.where(denom == 0, torch.zeros_like(value_tensor), (value_tensor - minimum) / denom)
 
-            output[key] = _restore_type(value_reference, normalized)
+            output[key] = normalized
         return output
 
 
@@ -155,14 +142,13 @@ class UnnormalizeTransform:
 
     def __call__(self, sample: Sample) -> Sample:
         output = dict(sample)
-        target_keys = self.keys if self.keys is not None else tuple(sample.keys())
+        target_keys = self.keys if self.keys is not None else [k for k in self.stats if k in sample]
         for key in target_keys:
             if key not in output or key not in self.stats:
                 continue
 
             stats_entry = self.stats[key]
-            value_reference = output[key]
-            value_tensor = _to_tensor(value_reference).to(dtype=torch.float32)
+            value_tensor = _to_tensor(output[key]).to(dtype=torch.float32)
 
             if self.mode == "z-score":
                 mean = _extract_stat(stats_entry, "mean")
@@ -178,7 +164,7 @@ class UnnormalizeTransform:
                 denom = maximum - minimum
                 unnormalized = torch.where(denom == 0, minimum, (value_tensor * denom) + minimum)
 
-            output[key] = _restore_type(value_reference, unnormalized)
+            output[key] = unnormalized
         return output
 
 

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pyarrow as pa  # type: ignore[import-untyped]
 import pyarrow.parquet as pq  # type: ignore[import-untyped]
 import torch
 from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata  # type: ignore[import-untyped]
@@ -172,8 +173,19 @@ class ShardInterleavedDataset(IterableDataset[dict[str, Any]]):
     def _read_shard_rows(self, shard_path: Path, columns: Sequence[str] | None) -> Iterator[dict[str, Any]]:
         parquet_file = pq.ParquetFile(shard_path)
         for batch in parquet_file.iter_batches(batch_size=self.parquet_batch_size, columns=columns):
-            for row in batch.to_pylist():
-                yield dict(row)
+            col_arrays: dict[str, Any] = {}
+            for name in batch.schema.names:
+                col = batch.column(name)
+                if (
+                    pa.types.is_primitive(col.type)
+                    and not pa.types.is_string(col.type)
+                    and not pa.types.is_binary(col.type)
+                ):
+                    col_arrays[name] = col.to_numpy(zero_copy_only=False)
+                else:
+                    col_arrays[name] = col.to_pylist()
+            for i in range(batch.num_rows):
+                yield {name: arr[i] for name, arr in col_arrays.items()}
 
     def _timestamp_from_context(
         self,

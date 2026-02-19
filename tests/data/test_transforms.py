@@ -58,8 +58,10 @@ def test_unnormalize_minmax_roundtrip_and_zero_range() -> None:
     sample = {"action": np.array([5.0, 2.0], dtype=np.float32)}
     normalized = normalize(sample)
     unnormalized = unnormalize(normalized)
-    np.testing.assert_allclose(normalized["action"], np.array([0.0, 0.5], dtype=np.float32))
-    np.testing.assert_allclose(unnormalized["action"], sample["action"])
+    assert isinstance(normalized["action"], torch.Tensor)
+    assert normalized["action"].dtype == torch.float32
+    assert torch.allclose(normalized["action"], torch.tensor([0.0, 0.5]), atol=1e-6)
+    assert torch.allclose(unnormalized["action"], torch.tensor([5.0, 2.0]), atol=1e-6)
 
 
 def test_image_transform_applies_to_multiple_keys() -> None:
