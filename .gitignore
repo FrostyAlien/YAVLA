@@ -203,3 +203,7 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Tool configs
+opencode.json
+pyrightconfig.json
