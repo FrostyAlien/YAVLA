@@ -32,9 +32,9 @@ Reference implementations (with verified source URLs):
 
 ## Decisions
 
-### D1: Module boundary contracts use frozen dataclasses, not raw tensors
+### D1: Module boundary contracts use typed dataclasses, with tensor fast-path where needed
 
-**Choice:** All inter-module data passes through typed `@dataclass` containers (`ObservationBatch`, `TokenBatch`, `BackboneOutput`, `ActionPrediction`, `ActionChunk`, `LossDict`, `TrainingBatch`). Fields are typed with `torch.Tensor` and documented shapes in comments.
+**Choice:** Core module boundaries use typed `@dataclass` containers (`ObservationBatch`, `TokenBatch`, `BackboneOutput`, `ActionPrediction`, `ActionChunk`, `LossDict`, `TrainingBatch`). For latency-sensitive merger/backbone wiring, Protocols use direct tensor tuples (`inputs_embeds`, `attention_mask`, `token_type_ids`) as a deliberate fast-path.
 
 **Why not raw tensors:** Silent shape/mask bugs are the #1 debugging time sink in ML code. Typed containers catch mismatches at construction time and make the data flow self-documenting. The overhead is negligible (dataclass construction is ~100ns).
 
@@ -62,7 +62,7 @@ Reference implementations (with verified source URLs):
 
 **Why `inputs_embeds` (not `input_ids`):** PaliGemma's `forward()` accepts either `input_ids` or `inputs_embeds`, but not both. Since we inject custom tokens (proprio, readout) that have no vocabulary entry, we must use `inputs_embeds` and set `input_ids=None`. This is the same pattern used by OpenVLA-OFT ([modeling_prismatic.py#L571-L638](https://github.com/moojink/openvla-oft/blob/e4287e94/prismatic/extern/hf/modeling_prismatic.py#L571-L638)) and π0 ([pi0.py#L200-L215](https://github.com/Physical-Intelligence/openpi/blob/981483dc/src/openpi/models/pi0.py#L200-L215)).
 
-**`token_type_ids` semantics:** PaliGemma uses `token_type_ids` to control attention: image tokens (type=0) are treated as prefix tokens with bidirectional attention, text/other tokens (type=1) use causal attention. Proprio and readout tokens get type=1 (causal). HF PaliGemma un-masks positions where `token_type_ids == 0` in `_update_causal_mask`. See [modeling_paligemma.py#L134-L138](https://github.com/huggingface/transformers/blob/556312cd/src/transformers/models/paligemma/modeling_paligemma.py#L134-L138).
+**`token_type_ids` semantics:** PaliGemma uses `token_type_ids` to control attention: image tokens are passed as type=0 (bidirectional prefix), text/other tokens as type=1 (causal). Proprio and readout tokens use type=1. Internally, HF may transform token-type conventions while constructing the hybrid mask; our contract is the call-site convention `0=image`, `1=non-image`. See [modeling_paligemma.py#L134-L138](https://github.com/huggingface/transformers/blob/556312cd/src/transformers/models/paligemma/modeling_paligemma.py#L134-L138).
 
 **Token ordering:** `[image_tokens | proprio_token | language_tokens | readout_tokens]`. Readout tokens MUST be at the END so causal attention naturally gives them visibility into all prior tokens while preventing prior tokens from attending to readouts (Octo's isolation property for free). See Octo analysis in [octo_module.py#L257-L262](https://github.com/octo-models/octo/blob/241fb351/octo/model/octo_module.py#L257-L262).
 
@@ -72,7 +72,7 @@ Reference implementations (with verified source URLs):
 
 **Choice:** Wrap `PaliGemmaForConditionalGeneration` from HuggingFace. The backbone receives `inputs_embeds` (from the merger), `token_type_ids`, and `attention_mask`. It forwards through PaliGemma's Gemma decoder layers and returns `BackboneOutput` with `readout_states` extracted from the last `N_readout` positions of the final hidden layer.
 
-**Token injection pattern:** Pass `input_ids=None, inputs_embeds=merged_embeds, pixel_values=None` to skip PaliGemma's internal vision pipeline. The hybrid causal mask (bidirectional for image tokens, causal for the rest) is controlled by `token_type_ids` via `create_causal_mask_mapping(..., is_training=self.training)` — NOT by `labels`. Do NOT pass dummy `labels`; they only trigger unnecessary LM loss computation. Set `model.train()` during training to ensure `is_training=True` for proper mask construction. See [modeling_paligemma.py#L304-L387](https://github.com/huggingface/transformers/blob/556312cd/src/transformers/models/paligemma/modeling_paligemma.py#L304-L387).
+**Token injection pattern:** Pass `input_ids=None, inputs_embeds=merged_embeds, pixel_values=None` to skip PaliGemma's internal vision pipeline. The hybrid causal mask (bidirectional for image tokens, causal for the rest) is controlled by `token_type_ids` via `create_causal_mask_mapping(..., is_training=self.training)` — NOT by `labels`. Do NOT pass dummy `labels`; they only trigger unnecessary LM loss computation. See [modeling_paligemma.py#L304-L387](https://github.com/huggingface/transformers/blob/556312cd/src/transformers/models/paligemma/modeling_paligemma.py#L304-L387).
 
 **Readout token initialization:** Zeros + learned positional embedding, shape `(1, N_readout, D_backbone)`, initialized with `normal(0, 0.02)`. Follows Octo's pattern. See [octo_module.py#L315-L333](https://github.com/octo-models/octo/blob/241fb351/octo/model/octo_module.py#L315-L333).
 
@@ -137,7 +137,7 @@ class FreezeConfig:
     lora_dropout: float = 0.0
 ```
 
-**`lora_target_modules` semantics:** These are peft `LoraConfig.target_modules` — leaf module TYPE names (e.g. `["q_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]`), NOT full module paths. peft matches these names against all modules in the model. This is the standard peft convention. See [peft LoraConfig docs](https://huggingface.co/docs/peft/main/en/package_reference/lora#peft.LoraConfig).
+**`lora_target_modules` semantics:** These are peft `LoraConfig.target_modules` module-name suffixes (e.g. `["q_proj", "v_proj"]` by default for Gemma-family; broader sets like `["q_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]` are intentional overrides), NOT full module paths. peft matches them against module names (exact or suffix match) across the model. This is the standard peft convention. See [peft LoraConfig docs](https://huggingface.co/docs/peft/main/en/package_reference/lora#peft.LoraConfig).
 
 **Why `peft` library (not custom LoRA):** `peft` is the HuggingFace standard for parameter-efficient fine-tuning. It handles weight merging for deployment, adapter saving/loading, and is battle-tested across thousands of models. Building custom LoRA is unnecessary complexity.
 
@@ -153,8 +153,8 @@ class FreezeConfig:
 3. Freeze specified modules via `param.requires_grad_(False)` on `base_model`
 4. If `lora_target_modules` non-empty: `peft_model = peft.get_peft_model(base_model, LoraConfig(target_modules=..., r=..., lora_alpha=..., lora_dropout=...))`
 5. If peft applied: call `peft_model.enable_input_require_grads()` (required for gradients to flow through frozen base to LoRA adapters under gradient checkpointing)
-6. Set `base_model.config.use_cache = False` (required for gradient checkpointing; MVP does not use KV cache)
-7. Enable gradient checkpointing: `base_model.gradient_checkpointing_enable()`
+6. If `config.backbone.gradient_checkpointing` is `True`: set `base_model.config.use_cache = False` (required for gradient checkpointing; MVP does not use KV cache)
+7. If `config.backbone.gradient_checkpointing` is `True`: enable gradient checkpointing via `base_model.gradient_checkpointing_enable()`
 8. Construct all modules and compose `VLAPolicy`
 
 ### D11: Prefer established libraries over custom implementations
@@ -181,7 +181,7 @@ class FreezeConfig:
 
 **[No temporal ensembling means chunk boundaries may cause jerky execution]** → MVP action decoder simply returns the predicted chunk. Temporal ensembling (overlapping chunk averaging) is post-MVP. For initial testing, this is acceptable.
 
-**[Tight coupling to PaliGemma via HuggingFace transformers + peft]** → The backbone wraps `PaliGemmaForConditionalGeneration` and LoRA uses `peft`. If either library's API changes, our wrappers break. Mitigation: pin transformers and peft versions in pyproject.toml. The Protocol interface means we can swap to a different VLM without changing downstream modules.
+**[Tight coupling to PaliGemma via HuggingFace transformers + peft]** → The backbone wraps `PaliGemmaForConditionalGeneration` and LoRA uses `peft`. If either library's API changes, our wrappers break. Mitigation: pin transformers and peft versions in pyproject.toml and treat mask/forward assumptions as pinned to the validated PaliGemma source snapshot (commit `556312cd`) until an explicit revalidation pass is completed. The Protocol interface means we can swap to a different VLM without changing downstream modules.
 
 **[`token_type_ids` and causal mask must be constructed correctly]** → PaliGemma uses `token_type_ids` to control bidirectional (image, type=0) vs causal (text, type=1) attention. The hybrid mask is constructed by `create_causal_mask_mapping(..., is_training=self.training)` which uses `token_type_ids` to un-mask image prefix tokens. In the HF source (commit `556312cd`), `is_training` only controls a validation check (requiring `token_type_ids` during training). The actual mask behavior is driven by `is_first_iteration` (inferred from `past_key_values is None`). Since MVP does not use KV cache (`past_key_values=None`), the hybrid mask works correctly in both `train()` and `eval()` modes. `position_ids` are NOT passed — PaliGemma computes them internally. Getting `token_type_ids` polarity wrong produces silent attention bugs. Mitigation: unit test that verifies attention mask shape and values for a known input.
 

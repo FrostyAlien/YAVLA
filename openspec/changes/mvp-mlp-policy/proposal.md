@@ -1,19 +1,19 @@
 ## Why
 
-YAVLA has a dataset layer but no model — we can load data but can't train anything. The architecture doc defines 7 core modules, but implementing everything at once is too risky. We need the simplest possible end-to-end policy that exercises all 7 module slots, proving the interfaces work before adding complexity. OpenVLA-OFT demonstrates that a frozen VLM + MLP regression head achieves competitive results — this is our MVP target architecture.
+YAVLA has a dataset layer but no model — we can load data but can't train anything. The architecture doc defines 7 core modules, but implementing everything at once is too risky. We need the simplest possible end-to-end policy that exercises all 7 module slots, proving the interfaces work before adding complexity. OpenVLA-OFT demonstrates that LoRA + selective freezing with an MLP regression head achieves competitive results — this is our MVP target architecture.
 
 ## What Changes
 
 - Add typed data containers (`ObservationBatch`, `TokenBatch`, `BackboneOutput`, `ActionPrediction`, `ActionChunk`, `LossDict`, `TrainingBatch`) as module boundary contracts
 - Add Protocol interfaces and ABC base classes for all 7 modules
-- Add generic `Registry[T]` with decorator registration
+- Add generic `Registry[ConfigT, ModuleT]` with decorator registration
 - Add capability negotiation (`IntegrationMode`, `BackboneCapabilities`, `ActionHeadRequirements`) — MVP uses readout mode only
 - Add SigLIP vision encoder wrapping PaliGemma's built-in SigLIP via `get_image_features()` — NOT frozen by default, configurable via `FreezeConfig`
-- Add configurable freeze + LoRA support via `peft` library (`FreezeConfig` with `freeze_modules`, `lora_modules`, `lora_r`, `lora_alpha`)
-- Add MLP proprio encoder (robot-specific projection to backbone dim)
+- Add configurable freeze + LoRA support via `peft` library (`FreezeConfig` with `freeze_modules`, `lora_target_modules`, `lora_r`, `lora_alpha`)
+- Add linear proprio encoder (robot-specific projection to backbone dim)
 - Add simple concat token merger (no Perceiver resampler — that's post-MVP)
 - Add standard VLM backbone in readout mode, wrapping PaliGemma via `transformers` with learned readout tokens (Octo-style)
-- Add MLP regression action head (`L1RegressionActionHead`, referencing OpenVLA-OFT's MLPResNet pattern) with L1 loss
+- Add MLP regression action head (`MLPRegressionHead`, referencing OpenVLA-OFT's MLPResNet pattern) with L1 loss
 - Add basic action decoder (unnormalize via `ActionSpaceSpec`, no temporal ensembling)
 - Add `VLAPolicy(nn.Module)` composing all modules, with `save_pretrained` / `from_pretrained`
 - Add `build_policy(PolicyConfig)` factory with build-time capability validation, freeze application, and LoRA wiring via `peft`
@@ -25,7 +25,7 @@ YAVLA has a dataset layer but no model — we can load data but can't train anyt
 ### New Capabilities
 
 - `model-types`: Typed data containers for all module boundaries (ObservationBatch, TokenBatch, BackboneOutput, ActionPrediction, ActionChunk, LossDict, TrainingBatch) and multi-embodiment specs (ActionSpaceSpec, ProprioSpec)
-- `model-registry`: Generic Registry[T] with decorator registration and config-driven build()
+- `model-registry`: Generic `Registry[ConfigT, ModuleT]` with decorator registration and config-driven build()
 - `model-protocols`: Protocol interfaces, ABC base classes, and capability negotiation for all 7 modules
 - `mvp-vision-encoder`: SigLIP So400m/14 vision encoder via PaliGemma's `get_image_features()`, configurable freeze + LoRA via `peft`
 - `mvp-token-merger`: Simple concatenation merger combining vision, proprio, language, and readout tokens into a single sequence

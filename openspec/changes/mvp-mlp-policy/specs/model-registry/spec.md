@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Generic Registry class
-`Registry[T]` SHALL be a generic class that maps string names to `(config_class, module_class)` pairs, with `register(name)` decorator, `build(config) → T`, `list() → list[str]`, and `get_default_config(name)`.
+`Registry[ConfigT, ModuleT]` SHALL be a generic class that maps string names to `(config_class, module_class)` pairs, with `register(name)` decorator, `build(config: ConfigT) → ModuleT`, `list() → list[str]`, and `get_default_config(name)`.
 
 #### Scenario: Register and build a module
 - **WHEN** a class is decorated with `@registry.register("my_module")` and `registry.build(config)` is called with a config whose `type` field matches `"my_module"`

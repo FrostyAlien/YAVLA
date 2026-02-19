@@ -10,6 +10,10 @@
 - **WHEN** `encode_images({"cam0": tensor[B, 3, 224, 224]})` is called (encoder already holds PaliGemma ref)
 - **THEN** it SHALL return embeddings shape `[B, 256, backbone_dim]` (256 = (224/14)²)
 
+#### Scenario: Reject multi-camera input in MVP
+- **WHEN** `encode_images(images)` is called with more than one camera key
+- **THEN** it SHALL raise `ValueError` indicating MVP encoder supports single-camera input only
+
 #### Scenario: Weights NOT frozen by default
 - **WHEN** the encoder is initialized with default `FreezeConfig()`
 - **THEN** all SigLIP and projector parameters SHALL have `requires_grad=True`

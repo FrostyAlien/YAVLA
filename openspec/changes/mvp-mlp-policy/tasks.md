@@ -18,7 +18,7 @@
 - [ ] 3.1 Implement `IntegrationMode` enum, `BackboneCapabilities`, `ActionHeadRequirements` in `src/yavla/models/protocols.py`
 - [ ] 3.2 Implement runtime-checkable Protocols with unified signatures:
   - `VisionEncoderProto`: `encode_images(images: dict[str, Tensor]) → Tensor` (encoder holds PaliGemma ref internally)
-  - `BackboneProto`: `forward(inputs_embeds, attention_mask, token_type_ids) → BackboneOutput`
+  - `BackboneProto`: `tokenizer` property + `forward(inputs_embeds, attention_mask, token_type_ids) → BackboneOutput`
   - `ActionHeadProto`: `compute_loss(backbone_output: BackboneOutput, batch: TrainingBatch) → LossDict`, `predict(backbone_output: BackboneOutput) → ActionPrediction`
   - `ActionDecoderProto`: `decode(pred: ActionPrediction) → ActionChunk`
   - `ProprioEncoderProto`: `encode_proprio(proprio: Tensor) → Tensor`
@@ -30,7 +30,7 @@
 ## 4. Vision Encoder
 
 - [ ] 4.1 Implement `VisionEncoderConfig` dataclass in `src/yavla/models/encoders/vision.py`
-- [ ] 4.2 Implement `PaliGemmaVisionEncoder(VisionEncoderBase)` — holds reference to backbone's unwrapped `base_model` (NOT PeftModel wrapper, NOT its own copy), calls `base_model.get_image_features(pixel_values, return_dict=True).pooler_output` to get projected+scaled image tokens `[B, 256, D]`. Do NOT rescale. NOT frozen by default — freeze controlled by `FreezeConfig`.
+- [ ] 4.2 Implement `PaliGemmaVisionEncoder(VisionEncoderBase)` — holds reference to backbone's unwrapped `base_model` (NOT PeftModel wrapper, NOT its own copy), calls `base_model.get_image_features(pixel_values, return_dict=True).pooler_output` to get projected+scaled image tokens `[B, 256, D]`. Do NOT rescale. NOT frozen by default — freeze controlled by `FreezeConfig`. MVP supports single-camera only; raise `ValueError` if more than one camera key is provided.
   <!-- Ref: PaliGemma get_image_features returns pooler_output (projected+scaled): https://github.com/huggingface/transformers/blob/556312cd/src/transformers/models/paligemma/modeling_paligemma.py#L92-L100
        Ref: π0 reuses PaliGemma's SigLIP: https://github.com/Physical-Intelligence/openpi/blob/981483dc/src/openpi/models/pi0.py#L108-L130 -->
 - [ ] 4.3 Register `PaliGemmaVisionEncoder` with `vision_registry`
@@ -46,7 +46,7 @@
 ## 5. Token Merger
 
 - [ ] 5.1 Implement `TokenMergerConfig` dataclass in `src/yavla/models/merger.py`
-- [ ] 5.2 Implement `ConcatMerger` — `merge(image_embeds, proprio_embeds, lang_embeds, lang_attn_mask)` concatenates `[image | proprio | language | readout]` tokens, builds `inputs_embeds`, `attention_mask`, `token_type_ids` (0=image, 1=rest). Readout tokens = zeros + learned positional embedding `N(0, 0.02)` at END of sequence. Does NOT produce `position_ids`.
+- [ ] 5.2 Implement `ConcatMerger` — `merge(image_embeds, proprio_embeds, language_embeds, language_attn_mask)` concatenates `[image | proprio | language | readout]` tokens, builds `inputs_embeds`, `attention_mask`, `token_type_ids` (0=image, 1=rest). Readout tokens = zeros + learned positional embedding `N(0, 0.02)` at END of sequence. Does NOT produce `position_ids`.
   <!-- Ref: PaliGemma token_type_ids: https://github.com/huggingface/transformers/blob/556312cd/src/transformers/models/paligemma/modeling_paligemma.py#L134-L138
        Ref: Octo readout init (zeros + pos_embed): https://github.com/octo-models/octo/blob/241fb351/octo/model/octo_module.py#L315-L333
        Ref: OpenVLA-OFT inputs_embeds bypass: https://github.com/moojink/openvla-oft/blob/e4287e94/prismatic/extern/hf/modeling_prismatic.py#L571-L638 -->
@@ -76,7 +76,7 @@
 - [ ] 8.1 Implement `SimpleActionDecoder(ActionDecoderBase)` in `src/yavla/models/decoder.py` — `decode(prediction: ActionPrediction) → ActionChunk`, unnormalize via `ActionSpaceSpec.limits`
   <!-- Ref: LeRobot normalization: https://github.com/huggingface/lerobot/blob/5f152322/src/lerobot/processor/normalize_processor.py#L400 -->
 - [ ] 8.2 Implement `PolicyConfig` dataclass tree in `src/yavla/models/config.py` — includes `FreezeConfig`, `ProprioEncoderConfig`, all sub-configs, `config_version: str`
-- [ ] 8.3 Implement `VLAPolicy(nn.Module)` in `src/yavla/models/policy.py` — compose all modules including `ProprioEncoder`. Language tokenization: `backbone.tokenizer(language)` → `input_ids` + `lang_attn_mask`, then `backbone.base_model.get_input_embeddings()(input_ids)` → `lang_embeds` (uses unwrapped base model). Forward: steps 1-6 per mvp-policy spec. Predict: steps 1-5 + `action_head.predict()` + `decoder.decode()`. `dt_hz` sourced from `TrainingBatch.dt_hz` in training, from `PolicyConfig.dt_hz` in inference.
+- [ ] 8.3 Implement `VLAPolicy(nn.Module)` in `src/yavla/models/policy.py` — compose all modules including `ProprioEncoder`. Language tokenization: `backbone.tokenizer(language)` → `input_ids` + `language_attn_mask`, then `backbone.base_model.get_input_embeddings()(input_ids)` → `language_embeds` (uses unwrapped base model). Forward: steps 1-6 per mvp-policy spec. Predict: steps 1-5 + `action_head.predict()` + `decoder.decode()`. `dt_hz` sourced from `TrainingBatch.dt_hz` in training, from `PolicyConfig.dt_hz` in inference.
   <!-- Ref: LeRobot PreTrainedPolicy: https://github.com/huggingface/lerobot/blob/5f152322/src/lerobot/policies/pretrained.py#L45
        Ref: OpenVLA-OFT forward: https://github.com/moojink/openvla-oft/blob/e4287e94/prismatic/extern/hf/modeling_prismatic.py#L571-L638 -->
 - [ ] 8.4 Implement `build_policy(PolicyConfig) → VLAPolicy` factory:
@@ -85,8 +85,8 @@
   (3) freeze modules per `FreezeConfig.freeze_modules` via `requires_grad_(False)` on `base_model`
   (4) if `FreezeConfig.lora_target_modules` non-empty: `peft_model = peft.get_peft_model(base_model, peft.LoraConfig(target_modules=..., r=..., lora_alpha=..., lora_dropout=...))` — peft freezes ALL base params, only adapters trainable
   (5) if peft applied: `peft_model.enable_input_require_grads()` (required for gradient flow through frozen base to LoRA adapters)
-  (6) `base_model.config.use_cache = False` (required for gradient checkpointing; MVP has no KV cache)
-  (7) `base_model.gradient_checkpointing_enable()`
+  (6) if `config.backbone.gradient_checkpointing` is True: `base_model.config.use_cache = False` (required for gradient checkpointing; MVP has no KV cache)
+  (7) if `config.backbone.gradient_checkpointing` is True: `base_model.gradient_checkpointing_enable()`
   (8) `validate_integration(backbone, head)`
   (9) compose `VLAPolicy`
   <!-- Ref: peft.get_peft_model + LoraConfig: https://huggingface.co/docs/peft/main/en/package_reference/lora#peft.LoraConfig

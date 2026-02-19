@@ -8,7 +8,7 @@
 - **THEN** it SHALL return `True`
 
 ### Requirement: BackboneProto protocol
-`BackboneProto` SHALL be a `@runtime_checkable Protocol` requiring `capabilities: BackboneCapabilities` property, `hidden_dim: int` property, and `forward(inputs_embeds, attention_mask, token_type_ids) → BackboneOutput` method.
+`BackboneProto` SHALL be a `@runtime_checkable Protocol` requiring `capabilities: BackboneCapabilities` property, `hidden_dim: int` property, `tokenizer` property (for language tokenization in policy wiring), and `forward(inputs_embeds, attention_mask, token_type_ids) → BackboneOutput` method.
 
 #### Scenario: Protocol conformance check
 - **WHEN** `isinstance(backbone, BackboneProto)` is called on a conforming class
@@ -29,7 +29,7 @@
 - **THEN** it SHALL return `True`
 
 ### Requirement: IntegrationMode and capability negotiation
-`IntegrationMode` SHALL be an `Enum` with values `READOUT` and `JOINT_TOKENS`. `BackboneCapabilities` SHALL declare `supported_modes: set[IntegrationMode]`. `ActionHeadRequirements` SHALL declare `required_mode: IntegrationMode`. A `validate_integration(backbone, head)` function SHALL raise `IncompatibleError` if the head's required mode is not in the backbone's supported modes.
+`IntegrationMode` SHALL be an `Enum` with values `READOUT` and `JOINT_TOKENS`. `BackboneCapabilities` SHALL declare `supported_modes: set[IntegrationMode]` and `supports_kv_cache: bool`. `ActionHeadRequirements` SHALL declare `required_mode: IntegrationMode` and `accepts_readout: bool`. A `validate_integration(backbone, head)` function SHALL raise `IncompatibleError` if the head's required mode is not in the backbone's supported modes.
 
 #### Scenario: Compatible readout mode
 - **WHEN** backbone supports `{READOUT}` and head requires `READOUT`

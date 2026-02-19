@@ -22,9 +22,9 @@
 - **THEN** it SHALL:
   1. `vision_encoder.encode_images(observations.images)` → image_embeds `[B, 256, D]`
   2. `proprio_encoder.encode_proprio(observations.proprio)` → proprio_embeds `[B, 1, D]`
-  3. Tokenize language via `backbone.tokenizer(language)` → `input_ids`, `lang_attn_mask`; embed via `backbone.base_model.get_input_embeddings()(input_ids)` → lang_embeds `[B, L, D]` (uses unwrapped base model, NOT PeftModel wrapper)
-  4. `merger.merge(image_embeds, proprio_embeds, lang_embeds, lang_attn_mask)` → `(inputs_embeds, attn_mask, token_type_ids)` — merger appends readout tokens internally
-  5. `backbone.forward(inputs_embeds, attn_mask, token_type_ids)` → `BackboneOutput` — NO dummy labels; hybrid mask is driven by `token_type_ids` + `model.train()` mode
+3. Tokenize language via `backbone.tokenizer(language)` → `input_ids`, `language_attn_mask`; embed via `backbone.base_model.get_input_embeddings()(input_ids)` → lang_embeds `[B, L, D]` (uses unwrapped base model, NOT PeftModel wrapper)
+4. `merger.merge(image_embeds, proprio_embeds, lang_embeds, language_attn_mask)` → `(inputs_embeds, attention_mask, token_type_ids)` — merger appends readout tokens internally
+5. `backbone.forward(inputs_embeds, attention_mask, token_type_ids)` → `BackboneOutput` — NO dummy labels; hybrid mask is driven by `token_type_ids` and works for both `train()` and `eval()` in MVP (no KV cache)
   6. `action_head.compute_loss(backbone_output, batch)` → `LossDict`
 
 #### Scenario: Inference predict
@@ -42,8 +42,8 @@
 3. Apply freeze via `param.requires_grad_(False)` for modules matching `FreezeConfig.freeze_modules` prefixes on `base_model`
 4. If `FreezeConfig.lora_target_modules` is non-empty: apply LoRA via `peft_model = peft.get_peft_model(base_model, peft.LoraConfig(target_modules=..., r=..., lora_alpha=..., lora_dropout=...))` — note: peft freezes ALL base params in the wrapper, only LoRA adapters are trainable; non-VLM modules (action head, proprio encoder, merger) are separate nn.Modules and remain trainable
 5. If peft applied: call `peft_model.enable_input_require_grads()` (required for gradient flow through frozen base to LoRA adapters under gradient checkpointing)
-6. Set `base_model.config.use_cache = False` (required for gradient checkpointing; MVP does not use KV cache)
-7. Enable gradient checkpointing: `base_model.gradient_checkpointing_enable()`
+6. If `config.backbone.gradient_checkpointing` is `True`: set `base_model.config.use_cache = False` (required for gradient checkpointing; MVP does not use KV cache)
+7. If `config.backbone.gradient_checkpointing` is `True`: enable gradient checkpointing via `base_model.gradient_checkpointing_enable()`
 8. Pass `num_readout_tokens` from `TokenMergerConfig` to the backbone constructor
 9. Construct vision encoder with `base_model` reference (unwrapped)
 10. Run `validate_integration(backbone, head)`
@@ -70,6 +70,10 @@
 #### Scenario: Unnormalize actions
 - **WHEN** `decode(prediction)` is called with normalized actions in `[-1, 1]`
 - **THEN** `ActionChunk.actions` SHALL be scaled to the range defined by `ActionSpaceSpec.limits`
+
+#### Scenario: Training target normalization contract
+- **WHEN** `ActionSpaceSpec.limits` is provided and `compute_loss` is used during training
+- **THEN** `TrainingBatch.actions` SHALL be normalized to `[-1, 1]` to match head prediction space; decoder unnormalization applies to inference outputs only
 
 #### Scenario: Pass-through when no normalization
 - **WHEN** `ActionSpaceSpec.limits` is `None`

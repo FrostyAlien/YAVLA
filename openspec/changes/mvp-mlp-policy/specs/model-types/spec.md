@@ -12,7 +12,7 @@
 - **THEN** `ObservationBatch` SHALL store both without modification
 
 ### Requirement: TokenBatch data container
-`TokenBatch` SHALL be a `@dataclass` holding `tokens: Tensor [B, N, D]`, `attn_mask: Tensor [B, N]`, `token_type_ids: Tensor [B, N]` (0=image/bidirectional prefix, 1=text+proprio+readout/causal), `modality_ids: Tensor [B, N]` (0=vision, 1=language, 2=proprio, 3=readout), and optional `readout_indices: Tensor | None`. `position_ids` is NOT included — PaliGemma computes them internally.
+`TokenBatch` SHALL be a `@dataclass` holding `tokens: Tensor [B, N, D]`, `attention_mask: Tensor [B, N]`, `token_type_ids: Tensor [B, N]` (0=image/bidirectional prefix, 1=text+proprio+readout/causal), `modality_ids: Tensor [B, N]` (0=vision, 1=language, 2=proprio, 3=readout), and optional `readout_indices: Tensor | None`. `position_ids` is NOT included — PaliGemma computes them internally.
 
 <!-- Ref: PaliGemma token_type_ids controls bidirectional vs causal attention:
      https://github.com/huggingface/transformers/blob/556312cd/src/transformers/models/paligemma/modeling_paligemma.py#L134-L138 -->
@@ -26,7 +26,7 @@
 - **THEN** `token_type_ids[:, :256]` SHALL all be `0` and `token_type_ids[:, 256:]` SHALL all be `1`
 
 ### Requirement: BackboneOutput data container
-`BackboneOutput` SHALL be a `@dataclass` with `readout_states: Tensor | None [B, N_readout, D]`, `token_states: Tensor | None [B, N, D]`, `attn_mask: Tensor`, and `aux: dict[str, Tensor]`.
+`BackboneOutput` SHALL be a `@dataclass` with `readout_states: Tensor | None [B, N_readout, D]`, `token_states: Tensor | None [B, N, D]`, `attention_mask: Tensor`, and `aux: dict[str, Tensor]`.
 
 #### Scenario: Readout mode output
 - **WHEN** backbone operates in readout mode
