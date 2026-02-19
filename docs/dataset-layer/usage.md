@@ -43,7 +43,7 @@ This page covers `DataConfig` fields, YAML/CLI configuration, common recipes, an
 |-------|------|---------|-------------|
 | `normalize` | `bool` | `True` | Enable statistical normalization |
 | `normalize_mode` | `"z-score" \| "min-max"` | `"z-score"` | Normalization method |
-| `normalize_keys` | `list[str] \| None` | `None` | Keys to normalize (`None` = all features) |
+| `normalize_keys` | `list[str] \| None` | `None` | Keys to normalize (`None` = all keys that have stats entries) |
 | `repack_keys` | `dict[str, str] \| None` | `None` | Key remapping (dataset key → model key) |
 | `feature_keys` | `list[str] \| None` | `None` | Explicit feature column selection |
 | `image_transforms` | `list[str] \| None` | `None` | Torchvision v2 transform names for camera keys |

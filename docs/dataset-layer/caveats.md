@@ -122,6 +122,10 @@ ValueError: Unsupported LeRobot codebase version: 'v2.0'; expected 'v3.0'
 
 The streaming and default backends inherit version requirements from upstream LeRobot.
 
+## Normalization Output Type
+
+`NormalizeTransform` and `UnnormalizeTransform` always output `torch.Tensor` (dtype `float32`). If downstream code expects numpy arrays from normalized keys, convert explicitly with `.numpy()`.
+
 ## Normative References
 
 - [`openspec/specs/streaming-dataset/spec.md`](../../openspec/specs/streaming-dataset/spec.md) — shuffle buffer, shard partitioning, temporal feature rejection, epoch seeding

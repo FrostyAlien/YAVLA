@@ -107,6 +107,7 @@ For `streaming`:
 | `ShardInterleavedDataset` | `src/yavla/data/streaming.py` | Streaming iterable backend |
 | `DataTransformFn` | `src/yavla/data/transforms.py` | Transform protocol + built-ins |
 | `validate_sample_schema()` | `src/yavla/data/schema.py` | Output schema validation |
+| `bench_dataloader.py` | `scripts/bench_dataloader.py` | Dataloader performance benchmark |
 
 ## Normative References
 
@@ -114,3 +115,4 @@ For `streaming`:
 - [`openspec/specs/lazy-dataset/spec.md`](../../openspec/specs/lazy-dataset/spec.md)
 - [`openspec/specs/streaming-dataset/spec.md`](../../openspec/specs/streaming-dataset/spec.md)
 - [`openspec/specs/data-transforms/spec.md`](../../openspec/specs/data-transforms/spec.md)
+- [`openspec/specs/dataloader-benchmark/spec.md`](../../openspec/specs/dataloader-benchmark/spec.md)

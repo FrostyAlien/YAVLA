@@ -26,5 +26,6 @@ The documentation in this folder is explanatory. The normative (source-of-truth)
 - [`openspec/specs/lazy-dataset/spec.md`](../../openspec/specs/lazy-dataset/spec.md) — lazy backend requirements
 - [`openspec/specs/streaming-dataset/spec.md`](../../openspec/specs/streaming-dataset/spec.md) — streaming backend requirements
 - [`openspec/specs/data-transforms/spec.md`](../../openspec/specs/data-transforms/spec.md) — transform pipeline protocol and built-in transforms
+- [`openspec/specs/dataloader-benchmark/spec.md`](../../openspec/specs/dataloader-benchmark/spec.md) — dataloader performance benchmark
 
 When docs and specs disagree, specs are authoritative.
