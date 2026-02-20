@@ -28,6 +28,10 @@ class SimpleActionDecoder(ActionDecoderBase):
     def decode(self, pred: ActionPrediction) -> ActionChunk:
         actions = pred.mean
         if self._action_space_spec.limits is not None:
+            # Note: We intentionally DO NOT clamp `actions` to [-1, 1] here to avoid
+            # GPU sync points / graph overhead during latency-critical inference.
+            # We assume the action head provides natively bounded predictions, and rely 
+            # on the environment or dataset layer to handle physical clipping if needed.
             limits = self._action_space_spec.limits.to(actions.device)
             lo, hi = limits[:, 0], limits[:, 1]
             actions = (actions + 1.0) / 2.0 * (hi - lo) + lo

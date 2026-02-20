@@ -233,6 +233,11 @@ The action head is the most consequential architectural choice in a VLA. It dete
 - **RT-1** (Brohan et al., 2023): EfficientNet + FiLM-conditioned TokenLearner → per-dimension classification heads (256 bins each, technically a discretized MLP). Each action dimension has its own linear head predicting a softmax over 256 bins — decoded in parallel (not autoregressive).
 - **RoboFlamingo** (Li et al., 2024): Flamingo VLM backbone → MLP or LSTM action head. The MLP variant is a simple 2-layer network on the last hidden state.
 
+**Design Detail: Tanh vs Unconstrained Linear Heads**
+Historically, earlier Reinforcement Learning algorithms (like DDPG) strictly enforced `-1` to `1` action bounds by applying a `Tanh` activation at the final layer of the actor network. However, modern Behavior Cloning (BC) VLAs almost unanimously avoid this and predict continuous actions using an **unconstrained `nn.Linear` layer**.
+- **The Problem with Tanh:** If a ground-truth demonstration action is exactly `-1.0` or `1.0` (which happens constantly for binary grippers), a `Tanh` layer requires an infinitely large or small pre-activation logit to reach the exact boundary. This causes the gradients to vanish (the "vanishing gradient problem"), preventing the network from confidently learning extreme actions.
+- **The Modern Standard:** Instead of hard-clipping in the graph, modern continuous heads (like Diffusion Policy, ACT, and Pi0) use a plain linear projection optimized with L1 or MSE loss against `[-1, 1]` normalized targets. The network naturally learns to output values in the right range. Any necessary physical safety clipping is applied exclusively at inference time in the environment or dataset runtime, outside the neural network computation graph, to avoid costly GPU-to-CPU synchronization points.
+
 **Strengths**: Fastest inference (single forward pass, no iteration). Simplest to implement and debug. Stable training.
 
 **Weaknesses**: Cannot represent multimodal distributions (averages modes → poor performance on tasks with multiple valid solutions). No temporal coherence without explicit chunking. Poor on contact-rich manipulation.

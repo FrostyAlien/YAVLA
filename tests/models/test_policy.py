@@ -57,6 +57,17 @@ class TestSimpleActionDecoder:
         assert dec.action_space_spec is spec
 
 
+
+    def test_unnormalize_without_clamping(self) -> None:
+        limits = torch.tensor([[0.0, 10.0]])
+        spec = ActionSpaceSpec(names=["x"], units=["m"], limits=limits, clip_unnormalized=False)
+        dec = SimpleActionDecoder(action_space_spec=spec)
+        # Input 2.0 unnormalized without clamping:
+        # (2.0 + 1) / 2 * 10 + 0 = 1.5 * 10 = 15.0
+        pred = ActionPrediction(mean=torch.tensor([[[2.0]]]))
+        chunk = dec.decode(pred)
+        assert chunk.actions[0, 0, 0].item() == pytest.approx(15.0, abs=1e-5)
+
 class TestPolicyConfig:
     def test_defaults(self) -> None:
         cfg = PolicyConfig()
