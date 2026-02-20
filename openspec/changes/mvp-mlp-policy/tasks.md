@@ -96,4 +96,19 @@
 ## 9. Wiring and Exports
 
 - [x] 9.1 Wire all registry imports in `src/yavla/models/__init__.py` so registrations execute on import
-- [x] 9.2 Export public API: `build_policy`, `VLAPolicy`, `PolicyConfig`, all Protocol types, all data containers
+- [x] 9.2 Export public API: `build_policy`, `VLAPolicy`, `PolicyBase`, `PolicyConfig`, all Protocol types, all data containers
+
+## 10. Code Review Fixes
+
+- [x] 10.1 Fix LoRA-aware `save_pretrained` — save adapter separately via `peft.save_pretrained()`, add `checkpoint_meta.json`, save non-VLM weights as `non_vlm_weights.safetensors`
+- [x] 10.2 Fix LoRA-aware `from_pretrained` — read `checkpoint_meta.json`, load adapter-only or full state dict; backward-compatible with pre-metadata checkpoints
+- [x] 10.3 Add `PolicyBase(nn.Module, ABC)` to `protocols.py` — minimal contract (`forward`, `predict`, `reset`, `get_optim_params`) with `__init_subclass__` enforcement of `name` and `config_class`
+- [x] 10.4 Refactor `VLAPolicy(PolicyBase)` — split pipeline into 5 overridable step methods: `encode_observations`, `merge_tokens`, `run_backbone`, `compute_loss`, `decode_prediction`
+- [x] 10.5 Fix spec conflict: correct `yavla-model-architecture/design.md` hybrid mask guidance (remove incorrect `labels` advice)
+
+## 11. Test Coverage
+
+- [x] 11.1 Add `tests/models/test_policy_serialization.py` — round-trip tests for `_tensor_to_list`, `_dict_to_config`, checkpoint file outputs, metadata, `_has_lora`
+- [x] 11.2 Add `PolicyBase` enforcement tests — `test_missing_name_raises`, `test_missing_config_class_raises`
+- [x] 11.3 Add `VLAPolicy` hierarchy tests — `test_is_policy_base`, `test_has_overridable_steps`, `test_reset_is_noop`, `test_name_and_config_class`
+

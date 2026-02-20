@@ -14,19 +14,34 @@ from yavla.models.protocols import (
     ActionDecoderBase,
     ActionHeadBase,
     BackboneBase,
+    PolicyBase,
     ProprioEncoderBase,
     VisionEncoderBase,
     validate_integration,
 )
 from yavla.models.types import (
     ActionChunk,
+    BackboneOutput,
     LossDict,
     ObservationBatch,
     TrainingBatch,
 )
 
 
-class VLAPolicy(nn.Module):
+class VLAPolicy(PolicyBase):
+    """VLM-based VLA policy composing 7 modules in a linear pipeline.
+
+    The pipeline steps are individual methods that subclasses can override:
+        encode_observations → merge_tokens → run_backbone → compute_loss / decode_prediction
+
+    For example, an AR-token policy can override merge_tokens (no readout) and
+    compute_loss (cross-entropy from logits). A flow-matching policy can override
+    forward to run a denoising loop calling run_backbone multiple times.
+    """
+
+    name = "vla"
+    config_class = PolicyConfig
+
     def __init__(
         self,
         vision_encoder: VisionEncoderBase,
@@ -46,7 +61,18 @@ class VLAPolicy(nn.Module):
         self.decoder = decoder
         self.config = config
 
-    def _encode_and_merge(self, obs: ObservationBatch) -> tuple[Tensor, Tensor, Tensor]:
+    # ------------------------------------------------------------------
+    # Overridable pipeline steps
+    # ------------------------------------------------------------------
+
+    def encode_observations(
+        self, obs: ObservationBatch
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        """Encode raw observations into embeddings.
+
+        Returns:
+            (image_embeds, proprio_embeds, lang_embeds, lang_attn_mask)
+        """
         image_embeds = self.vision_encoder.encode_images(obs.images)
         proprio_embeds = self.proprio_encoder.encode_proprio(obs.proprio)
 
@@ -59,19 +85,53 @@ class VLAPolicy(nn.Module):
         language_attn_mask = tok_out["attention_mask"].to(image_embeds.device)
         lang_embeds = self.backbone.base_model.get_input_embeddings()(input_ids)
 
-        return self.merger.merge(image_embeds, proprio_embeds, lang_embeds, language_attn_mask)
+        return image_embeds, proprio_embeds, lang_embeds, language_attn_mask
+
+    def merge_tokens(
+        self,
+        image_embeds: Tensor,
+        proprio_embeds: Tensor,
+        lang_embeds: Tensor,
+        lang_attn_mask: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        """Merge modality embeddings into backbone input.
+
+        Returns:
+            (inputs_embeds, attention_mask, token_type_ids)
+        """
+        return self.merger.merge(image_embeds, proprio_embeds, lang_embeds, lang_attn_mask)
+
+    def run_backbone(
+        self, inputs_embeds: Tensor, attention_mask: Tensor, token_type_ids: Tensor
+    ) -> BackboneOutput:
+        """Run the VLM backbone."""
+        return self.backbone(inputs_embeds, attention_mask, token_type_ids)
+
+    def compute_loss(self, backbone_output: BackboneOutput, batch: TrainingBatch) -> LossDict:
+        """Compute training loss from backbone output."""
+        return self.action_head.compute_loss(backbone_output, batch)
+
+    def decode_prediction(self, backbone_output: BackboneOutput) -> ActionChunk:
+        """Predict and decode an action chunk from backbone output."""
+        prediction = self.action_head.predict(backbone_output)
+        return self.decoder.decode(prediction)
+
+    # ------------------------------------------------------------------
+    # Composed pipeline
+    # ------------------------------------------------------------------
 
     def forward(self, batch: TrainingBatch) -> LossDict:
-        inputs_embeds, attention_mask, token_type_ids = self._encode_and_merge(batch.observations)
-        backbone_output = self.backbone(inputs_embeds, attention_mask, token_type_ids)
-        return self.action_head.compute_loss(backbone_output, batch)
+        img_e, prop_e, lang_e, lang_m = self.encode_observations(batch.observations)
+        embeds, attn, ttids = self.merge_tokens(img_e, prop_e, lang_e, lang_m)
+        backbone_out = self.run_backbone(embeds, attn, ttids)
+        return self.compute_loss(backbone_out, batch)
 
     @torch.no_grad()
     def predict(self, obs: ObservationBatch) -> ActionChunk:
-        inputs_embeds, attention_mask, token_type_ids = self._encode_and_merge(obs)
-        backbone_output = self.backbone(inputs_embeds, attention_mask, token_type_ids)
-        prediction = self.action_head.predict(backbone_output)
-        return self.decoder.decode(prediction)
+        img_e, prop_e, lang_e, lang_m = self.encode_observations(obs)
+        embeds, attn, ttids = self.merge_tokens(img_e, prop_e, lang_e, lang_m)
+        backbone_out = self.run_backbone(embeds, attn, ttids)
+        return self.decode_prediction(backbone_out)
 
     def _has_lora(self) -> bool:
         """Check whether the backbone model is wrapped with peft."""

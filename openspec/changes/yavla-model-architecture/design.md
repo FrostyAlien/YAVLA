@@ -30,9 +30,10 @@ Reference implementations:
 **Non-Goals:**
 - Training infrastructure (distributed training, wandb, schedulers) — separate change
 - Dataset layer modifications — already complete
-- Autoregressive token head (uses LM head directly, fundamentally different interface)
 - Energy-based / world model heads (research-only, low priority)
 - Custom CUDA kernels or FlashAttention integration
+
+> **Note:** Autoregressive token head (uses LM head directly) was previously a non-goal. It has been reclassified as a low-priority phase — the `PolicyBase` + overridable `VLAPolicy` pipeline can accommodate it via `IntegrationMode.LM_HEAD` with minimal new code.
 
 ## Decisions
 
@@ -57,6 +58,14 @@ Reference implementations:
 **Choice:** Readout mode is the universal default (7 of 8 heads). Joint-token mode is opt-in, requiring `DualExpertBackbone` + a head that declares `required_mode=JOINT_TOKENS`. The `validate_integration()` function enforces compatibility at build time.
 
 **Why two levels:** Readout mode provides a clean information bottleneck — heads are trivially swappable. Joint-token mode sacrifices modularity for performance (π0 demonstrates this is necessary for flow matching with action-conditioned denoising). Supporting both means YAVLA can reproduce any published VLA architecture.
+
+### D2b: PolicyBase ABC with overridable VLAPolicy pipeline
+
+**Choice (implemented):** A `PolicyBase(nn.Module, ABC)` base class defines the minimal policy contract (`forward`, `predict`, `reset`, `get_optim_params`). `VLAPolicy(PolicyBase)` implements the 7-module pipeline as 5 overridable step methods: `encode_observations`, `merge_tokens`, `run_backbone`, `compute_loss`, `decode_prediction`. Future policy types (AR token, flow matching, dual-expert) subclass `VLAPolicy` and override 1-2 steps while reusing the rest.
+
+`__init_subclass__` enforces that every concrete subclass defines `name: str` and `config_class: type` (following LeRobot's `PreTrainedPolicy` pattern).
+
+**Why overridable steps (not separate classes):** Most VLA architectures share 80%+ of the pipeline (vision encoder, proprio encoder, backbone). Only the merger behavior, loss computation, and sometimes the forward loop differ. Overridable steps maximize module reuse while allowing radical differences when needed.
 
 ### D3: PEFT as the default backbone adaptation strategy
 
@@ -105,3 +114,5 @@ Reference implementations:
 **[Multi-embodiment weight sharing may cause negative transfer]** → Per-robot adapter layers isolate robot-specific parameters. The shared backbone sees a canonical representation. If negative transfer occurs, per-robot backbone LoRA adapters can specialize further.
 
 **[8 phases is a long roadmap — priorities may shift]** → Each phase is independently shippable. Phases can be reordered or skipped based on evaluation results. The MVP is usable immediately.
+
+**[LoRA checkpointing must use peft's native format]** → `save_pretrained` saves LoRA adapters separately via `peft.save_pretrained()` + `checkpoint_meta.json`. `from_pretrained` reads metadata to select adapter-only or full state dict loading. Backward-compatible with pre-metadata checkpoints.

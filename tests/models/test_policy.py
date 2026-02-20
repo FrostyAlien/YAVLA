@@ -164,3 +164,62 @@ class TestVLAPolicy:
         assert policy.backbone is not None
         assert policy.action_head is not None
         assert policy.decoder is not None
+
+    def test_is_policy_base(self) -> None:
+        from yavla.models.protocols import PolicyBase
+
+        policy = self._make_policy()
+        assert isinstance(policy, PolicyBase)
+
+    def test_has_overridable_steps(self) -> None:
+        policy = self._make_policy()
+        assert callable(getattr(policy, "encode_observations", None))
+        assert callable(getattr(policy, "merge_tokens", None))
+        assert callable(getattr(policy, "run_backbone", None))
+        assert callable(getattr(policy, "compute_loss", None))
+        assert callable(getattr(policy, "decode_prediction", None))
+
+    def test_reset_is_noop(self) -> None:
+        policy = self._make_policy()
+        # Should not raise
+        policy.reset()
+
+    def test_name_and_config_class(self) -> None:
+        from yavla.models.policy import VLAPolicy
+        from yavla.models.config import PolicyConfig
+
+        assert VLAPolicy.name == "vla"
+        assert VLAPolicy.config_class is PolicyConfig
+
+
+class TestPolicyBaseEnforcement:
+    """Test __init_subclass__ contract enforcement."""
+
+    def test_missing_name_raises(self) -> None:
+        from yavla.models.protocols import PolicyBase
+
+        with pytest.raises(TypeError, match="must define 'name'"):
+
+            class BadPolicy(PolicyBase):
+                config_class = PolicyConfig
+
+                def forward(self, batch):
+                    ...
+
+                def predict(self, obs):
+                    ...
+
+    def test_missing_config_class_raises(self) -> None:
+        from yavla.models.protocols import PolicyBase
+
+        with pytest.raises(TypeError, match="must define 'config_class'"):
+
+            class BadPolicy(PolicyBase):
+                name = "bad"
+
+                def forward(self, batch):
+                    ...
+
+                def predict(self, obs):
+                    ...
+

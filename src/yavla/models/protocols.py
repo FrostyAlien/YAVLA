@@ -16,6 +16,7 @@ from yavla.models.types import (
     ActionSpaceSpec,
     BackboneOutput,
     LossDict,
+    ObservationBatch,
     TrainingBatch,
 )
 
@@ -158,6 +159,45 @@ class ProprioEncoderBase(nn.Module, ABC):
 
     @abstractmethod
     def encode_proprio(self, proprio: Tensor) -> Tensor: ...
+
+class PolicyBase(nn.Module, ABC):
+    """Minimal contract for all YAVLA policies.
+
+    Concrete subclasses MUST define:
+        name: str            — policy identifier (e.g. "vla", "ar_token", "flow_match")
+        config_class: type   — the config dataclass this policy expects
+    """
+
+    name: str
+    config_class: type
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        # Skip enforcement on intermediate abstract classes
+        if ABC in cls.__bases__:
+            return
+        if not getattr(cls, "name", None):
+            raise TypeError(f"Class {cls.__name__} must define 'name'")
+        if not getattr(cls, "config_class", None):
+            raise TypeError(f"Class {cls.__name__} must define 'config_class'")
+
+    @abstractmethod
+    def forward(self, batch: TrainingBatch) -> LossDict:
+        """Compute loss for a training batch."""
+        ...
+
+    @abstractmethod
+    def predict(self, obs: ObservationBatch) -> ActionChunk:
+        """Predict an action chunk from observations (inference)."""
+        ...
+
+    def reset(self) -> None:
+        """Clear caches (KV cache, action buffer, etc.). Default: no-op."""
+        pass
+
+    def get_optim_params(self) -> dict[str, Any]:
+        """Parameter groups for the optimizer. Default: all params, single group."""
+        return {"params": self.parameters()}
 
 
 # ---------------------------------------------------------------------------

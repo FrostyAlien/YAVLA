@@ -27,6 +27,7 @@ from yavla.models.protocols import (
     BackboneCapabilities,
     BackboneProto,
     IntegrationMode,
+    PolicyBase,
     ProprioEncoderProto,
     TokenMergerProto,
     VisionEncoderProto,
