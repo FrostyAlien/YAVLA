@@ -15,7 +15,7 @@ from yavla.models.decoder import SimpleActionDecoder
 from yavla.models.encoders.proprio import ProprioEncoder, ProprioEncoderConfig
 from yavla.models.heads.mlp import MLPHeadConfig, MLPRegressionHead
 from yavla.models.merger import ConcatMerger, TokenMergerConfig
-from yavla.models.policy import VLAPolicy, _dict_to_config, _tensor_to_list
+from yavla.models.policy import VLAPolicy, _dict_to_config, _filter_known_fields, _tensor_to_list
 from yavla.models.types import ActionSpaceSpec, BackboneOutput, FreezeConfig
 
 
@@ -117,6 +117,49 @@ class TestDictToConfig:
         cfg = _dict_to_config(d)
         assert cfg.action_space.limits is not None
         assert cfg.action_space.limits.shape == (1, 2)
+
+    def test_unknown_keys_dropped(self) -> None:
+        """Extra keys from a 'future' config version should be dropped, not crash."""
+        d = {
+            "backbone": {"vlm_name": "google/paligemma-3b-pt-224", "future_flag": True},
+            "merger": {"type": "concat", "num_readout_tokens": 32, "new_field": 42},
+        }
+        cfg = _dict_to_config(d)
+        assert cfg.backbone.vlm_name == "google/paligemma-3b-pt-224"
+        assert cfg.merger.num_readout_tokens == 32
+        # Unknown keys should not appear
+        assert not hasattr(cfg.backbone, "future_flag")
+        assert not hasattr(cfg.merger, "new_field")
+
+    def test_unknown_keys_logged(self, caplog) -> None:
+        """Dropped keys should produce a warning log."""
+        import logging
+
+        d = {"backbone": {"unknown_key": "value"}}
+        with caplog.at_level(logging.WARNING):
+            _dict_to_config(d)
+        assert "unknown_key" in caplog.text
+        assert "BackboneConfig" in caplog.text
+
+
+class TestFilterKnownFields:
+    def test_keeps_known(self) -> None:
+        from yavla.models.merger import TokenMergerConfig
+
+        result = _filter_known_fields(TokenMergerConfig, {"type": "concat", "num_readout_tokens": 32})
+        assert result == {"type": "concat", "num_readout_tokens": 32}
+
+    def test_drops_unknown(self) -> None:
+        from yavla.models.merger import TokenMergerConfig
+
+        result = _filter_known_fields(TokenMergerConfig, {"type": "concat", "future_param": 99})
+        assert result == {"type": "concat"}
+
+    def test_empty_dict(self) -> None:
+        from yavla.models.merger import TokenMergerConfig
+
+        result = _filter_known_fields(TokenMergerConfig, {})
+        assert result == {}
 
 
 # -- Tests for save_pretrained/from_pretrained ----------------------------

@@ -348,8 +348,34 @@ def _tensor_to_list(d: dict) -> None:
             _tensor_to_list(v)
 
 
+def _filter_known_fields(cls: type, d: dict) -> dict:
+    """Filter dict to only keys accepted by a dataclass constructor.
+
+    Logs a warning for any dropped keys (forward-compatibility).
+    """
+    import dataclasses
+    import logging
+
+    known = {f.name for f in dataclasses.fields(cls)}
+    filtered = {}
+    for k, v in d.items():
+        if k in known:
+            filtered[k] = v
+        else:
+            logging.warning(
+                "Config key %r not recognized by %s — skipping (possibly from a newer config version)",
+                k,
+                cls.__name__,
+            )
+    return filtered
+
+
 def _dict_to_config(d: dict) -> PolicyConfig:
-    """Reconstruct PolicyConfig from a dict (loaded from JSON)."""
+    """Reconstruct PolicyConfig from a dict (loaded from JSON).
+
+    Unknown keys in sub-configs are silently dropped with a warning,
+    enabling forward-compatibility when loading checkpoints from newer versions.
+    """
     from yavla.models.backbone import BackboneConfig
     from yavla.models.encoders.proprio import ProprioEncoderConfig
     from yavla.models.encoders.vision import VisionEncoderConfig
@@ -358,14 +384,15 @@ def _dict_to_config(d: dict) -> PolicyConfig:
     from yavla.models.types import ActionSpaceSpec, FreezeConfig, ProprioSpec
 
     return PolicyConfig(
-        vision_encoder=VisionEncoderConfig(**d.get("vision_encoder", {})),
-        proprio_encoder=ProprioEncoderConfig(**d.get("proprio_encoder", {})),
-        merger=TokenMergerConfig(**d.get("merger", {})),
-        backbone=BackboneConfig(**d.get("backbone", {})),
-        action_head=MLPHeadConfig(**d.get("action_head", {})),
-        freeze=FreezeConfig(**d.get("freeze", {})),
-        action_space=ActionSpaceSpec(**d.get("action_space", {"names": [], "units": [], "limits": None})),
-        proprio=ProprioSpec(**d.get("proprio", {"names": [], "units": []})),
+        vision_encoder=VisionEncoderConfig(**_filter_known_fields(VisionEncoderConfig, d.get("vision_encoder", {}))),
+        proprio_encoder=ProprioEncoderConfig(**_filter_known_fields(ProprioEncoderConfig, d.get("proprio_encoder", {}))),
+        merger=TokenMergerConfig(**_filter_known_fields(TokenMergerConfig, d.get("merger", {}))),
+        backbone=BackboneConfig(**_filter_known_fields(BackboneConfig, d.get("backbone", {}))),
+        action_head=MLPHeadConfig(**_filter_known_fields(MLPHeadConfig, d.get("action_head", {}))),
+        freeze=FreezeConfig(**_filter_known_fields(FreezeConfig, d.get("freeze", {}))),
+        action_space=ActionSpaceSpec(**_filter_known_fields(ActionSpaceSpec, d.get("action_space", {"names": [], "units": [], "limits": None}))),
+        proprio=ProprioSpec(**_filter_known_fields(ProprioSpec, d.get("proprio", {"names": [], "units": []}))),
         dt_hz=d.get("dt_hz", 10.0),
         config_version=d.get("config_version", "1.0"),
     )
+
