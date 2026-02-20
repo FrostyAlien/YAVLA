@@ -67,14 +67,14 @@ The VLA (Vision-Language-Action) design space has exploded in 2024–2025. We su
 
 ### The Design Space at a Glance
 
-| Dimension | Options | YAVLA Default |
-|-----------|---------|---------------|
-| Action head | Diffusion, Flow Matching, AR, CVAE, VQ-BeT, MLP, EBM, World Model, Hybrid | Flow Matching (π0-style) |
-| Vision encoder | SigLIP, DINOv2, Dual (SigLIP+DINO), Custom ViT, 3D-aware | SigLIP So400m/14 (frozen + late-block LoRA) |
-| VL backbone | Direct VLM, Linear projection, Dual-stream, Cross-attention | Dual-stream (PaliGemma + Action Expert, PEFT default) |
-| VL fusion | Tokens-in-sequence, ConditionBundle, FiLM, Readout tokens | Tokens-in-sequence |
-| Action space | Continuous, Discretized bins, VQ codebook, DCT frequency | Continuous (flow matching) |
-| Multi-embodiment | Shared trunk, Per-robot stems/heads (HPT), Per-robot action heads | Per-robot stems/heads |
+| Dimension        | Options                                                                   | YAVLA Default                                         |
+| ---------------- | ------------------------------------------------------------------------- | ----------------------------------------------------- |
+| Action head      | Diffusion, Flow Matching, AR, CVAE, VQ-BeT, MLP, EBM, World Model, Hybrid | Flow Matching (π0-style)                              |
+| Vision encoder   | SigLIP, DINOv2, Dual (SigLIP+DINO), Custom ViT, 3D-aware                  | SigLIP So400m/14 (frozen + late-block LoRA)           |
+| VL backbone      | Direct VLM, Linear projection, Dual-stream, Cross-attention               | Dual-stream (PaliGemma + Action Expert, PEFT default) |
+| VL fusion        | Tokens-in-sequence, ConditionBundle, FiLM, Readout tokens                 | Tokens-in-sequence                                    |
+| Action space     | Continuous, Discretized bins, VQ codebook, DCT frequency                  | Continuous (flow matching)                            |
+| Multi-embodiment | Shared trunk, Per-robot stems/heads (HPT), Per-robot action heads         | Per-robot stems/heads                                 |
 
 ---
 
@@ -84,17 +84,17 @@ The action head is the most consequential architectural choice in a VLA. It dete
 
 ### Overview Comparison
 
-| Paradigm | Multimodal? | Inference Steps | Latency | Smoothness | Key Models |
-|----------|-------------|-----------------|---------|------------|------------|
-| MLP / Direct Regression | ❌ No | 1 | ~1ms | Low | BC-Z, RT-1 |
-| CVAE (ACT) | ✅ Yes | 1 (+ sampling z) | ~2ms | High (chunked) | ACT, ACT++ |
-| Diffusion (DDPM/DDIM) | ✅ Yes | 10–100 | 50–500ms | High | Diffusion Policy, Octo |
-| Flow Matching | ✅ Yes | 1–10 | 5–50ms | High | π0, ManiFlow |
-| Autoregressive Tokens | ❌ No* | D×T sequential | 10–200ms | Medium | RT-2, OpenVLA, FAST |
-| VQ-BeT | ✅ Yes | 1 (+ codebook) | ~5ms | Medium | VQ-BeT, QueST |
-| Energy-Based (IBC) | ✅ Yes | 50–200 (Langevin) | 100–500ms | Medium | Implicit BC |
-| World Model + IDM | ✅ Yes | Video gen + IDM | 1–10s | High | UniPi, SuSIE |
-| Hybrid (Coarse-to-Fine) | ✅ Yes | AR + Diffusion | 20–100ms | High | DiVLA, PIVOT-R |
+| Paradigm                | Multimodal? | Inference Steps   | Latency   | Smoothness     | Key Models             |
+| ----------------------- | ----------- | ----------------- | --------- | -------------- | ---------------------- |
+| MLP / Direct Regression | ❌ No        | 1                 | ~1ms      | Low            | BC-Z, RT-1             |
+| CVAE (ACT)              | ✅ Yes       | 1 (+ sampling z)  | ~2ms      | High (chunked) | ACT, ACT++             |
+| Diffusion (DDPM/DDIM)   | ✅ Yes       | 10–100            | 50–500ms  | High           | Diffusion Policy, Octo |
+| Flow Matching           | ✅ Yes       | 1–10              | 5–50ms    | High           | π0, ManiFlow           |
+| Autoregressive Tokens   | ❌ No*       | D×T sequential    | 10–200ms  | Medium         | RT-2, OpenVLA, FAST    |
+| VQ-BeT                  | ✅ Yes       | 1 (+ codebook)    | ~5ms      | Medium         | VQ-BeT, QueST          |
+| Energy-Based (IBC)      | ✅ Yes       | 50–200 (Langevin) | 100–500ms | Medium         | Implicit BC            |
+| World Model + IDM       | ✅ Yes       | Video gen + IDM   | 1–10s     | High           | UniPi, SuSIE           |
+| Hybrid (Coarse-to-Fine) | ✅ Yes       | AR + Diffusion    | 20–100ms  | High           | DiVLA, PIVOT-R         |
 
 \* AR can represent multimodality through sampling temperature, but each sample is unimodal.
 
@@ -298,14 +298,14 @@ The action head is the most consequential architectural choice in a VLA. It dete
 
 ### 3.1 Vision Encoder Landscape
 
-| Encoder | Pre-training | Resolution | Patch Size | Output Dim | Used By |
-|---------|-------------|------------|------------|------------|---------|
-| SigLIP So400m/14 | Contrastive (sigmoid) | 224–384 | 14×14 | 1152 | π0, OpenVLA |
-| DINOv2 ViT-L/14 | Self-supervised | 224–518 | 14×14 | 1024 | OpenVLA (dual), Octo |
-| SigLIP + DINOv2 (Prismatic) | Both | 224 | 14×14 | 2176 (concat) | OpenVLA v2 |
-| SmallStem16 CNN | From scratch | 256 | 16×16 | 512 | Octo |
-| ViT-22B | Contrastive | 224 | 14×14 | 6144 | RT-2 |
-| EfficientNet-B3 | ImageNet | 300 | N/A | 1536 | RT-1 |
+| Encoder                     | Pre-training          | Resolution | Patch Size | Output Dim    | Used By              |
+| --------------------------- | --------------------- | ---------- | ---------- | ------------- | -------------------- |
+| SigLIP So400m/14            | Contrastive (sigmoid) | 224–384    | 14×14      | 1152          | π0, OpenVLA          |
+| DINOv2 ViT-L/14             | Self-supervised       | 224–518    | 14×14      | 1024          | OpenVLA (dual), Octo |
+| SigLIP + DINOv2 (Prismatic) | Both                  | 224        | 14×14      | 2176 (concat) | OpenVLA v2           |
+| SmallStem16 CNN             | From scratch          | 256        | 16×16      | 512           | Octo                 |
+| ViT-22B                     | Contrastive           | 224        | 14×14      | 6144          | RT-2                 |
+| EfficientNet-B3             | ImageNet              | 300        | N/A        | 1536          | RT-1                 |
 
 **Key observations from source code analysis**:
 
@@ -883,6 +883,18 @@ class ActionHeadBase(nn.Module, ABC):
     @property
     @abstractmethod
     def requirements(self) -> "ActionHeadRequirements": ...
+
+class PolicyBase(nn.Module, ABC):
+    """Minimal contract for all YAVLA policies.
+    Concrete subclasses MUST define: name (str) and config_class (type).
+    Enforced via __init_subclass__.
+    """
+    @abstractmethod
+    def forward(self, batch: TrainingBatch) -> LossDict: ...
+    @abstractmethod
+    def predict(self, obs: ObservationBatch) -> ActionChunk: ...
+    def reset(self) -> None: pass
+    def get_optim_params(self) -> dict: return {"params": self.parameters()}
 ```
 
 #### 7.2.3 Capability Negotiation (Expanded)
@@ -954,25 +966,17 @@ class ProprioSpec:
 Canonical training step — all training loops follow this contract regardless of action head or integration mode.
 
 ```python
-def train_step(policy: VLAPolicy, batch: TrainingBatch, optimizer: Optimizer) -> LossDict:
-    # 1. Encode observations → tokens
-    obs_batch = policy.obs_adapter.encode(batch.observations)
-    vision_tokens = policy.vision_encoder.encode_images(obs_batch.images)
-    proprio_tokens = policy.proprio_encoder(obs_batch.proprio)
-    lang_tokens = policy.language_encoder(obs_batch.language)
+def train_step(policy: PolicyBase, batch: TrainingBatch, optimizer: Optimizer) -> LossDict:
+    """Canonical training step — works with any PolicyBase subclass.
+    
+    VLAPolicy exposes overridable steps:
+        encode_observations → merge_tokens → run_backbone → compute_loss / decode_prediction
+    Subclasses (e.g., ARTokenPolicy, FlowMatchPolicy) override 1-2 steps.
+    """
+    # Policy.forward() composes the overridable steps internally
+    loss_dict = policy.forward(batch)
 
-    # 2. Merge tokens (resampler applies here)
-    token_batch = policy.merger(vision_tokens, proprio_tokens, lang_tokens, context=None)
-
-    # 3. Backbone forward (mode determined by head requirements)
-    backbone_out = policy.backbone(token_batch, integration_request=policy.integration_request)
-
-    # 4. Head computes loss against ground-truth actions
-    loss_dict = policy.head.compute_loss(
-        backbone_out, batch, rng=policy.rng, mask=batch.action_mask, loss_cfg=None
-    )
-
-    # 5. Backward + optimizer step (PEFT: only trainable params have grad)
+    # Backward + optimizer step (PEFT: only trainable params have grad)
     loss_dict.total.backward()
     optimizer.step()
     optimizer.zero_grad()
@@ -983,16 +987,16 @@ def train_step(policy: VLAPolicy, batch: TrainingBatch, optimizer: Optimizer) ->
 
 Which heads work with which integration modes:
 
-| Action Head | Readout Mode | Joint-Token Mode | Backbone Requirement |
-|-------------|-------------|-----------------|---------------------|
-| Flow Matching (standalone) | ✅ | ❌ | Any |
-| Flow Matching (π0-style) | ❌ | ✅ | DualExpert only |
-| Diffusion (DDPM/DDIM) | ✅ | ❌ | Any |
-| CVAE (ACT) | ✅ | ❌ | Any |
-| Autoregressive | N/A | N/A | LM head (built-in) |
-| VQ-BeT | ✅ | ❌ | Any |
-| MLP / L1 Regression | ✅ | ❌ | Any |
-| Energy-Based | ✅ | ❌ | Any |
+| Action Head                | Readout Mode | Joint-Token Mode | Backbone Requirement |
+| -------------------------- | ------------ | ---------------- | -------------------- |
+| Flow Matching (standalone) | ✅            | ❌                | Any                  |
+| Flow Matching (π0-style)   | ❌            | ✅                | DualExpert only      |
+| Diffusion (DDPM/DDIM)      | ✅            | ❌                | Any                  |
+| CVAE (ACT)                 | ✅            | ❌                | Any                  |
+| Autoregressive             | N/A          | N/A              | LM head (built-in)   |
+| VQ-BeT                     | ✅            | ❌                | Any                  |
+| MLP / L1 Regression        | ✅            | ❌                | Any                  |
+| Energy-Based               | ✅            | ❌                | Any                  |
 
 Key takeaway: **7 of 8 heads work in readout mode.** Only π0-style flow matching requires joint-token mode. This validates the two-level strategy — readout is the universal default.
 
@@ -1105,9 +1109,12 @@ class Registry[T]:
 ```
 src/yavla/models/
 ├── types.py                    # ObservationBatch, TokenBatch, BackboneOutput, ActionChunk, etc.
+├── protocols.py                # PolicyBase ABC, Protocols, Base classes, capability negotiation
 ├── registry.py                 # Explicit registries: register_vision, register_head, etc.
 ├── factory.py                  # build_policy(PolicyConfig, deps) → Policy + validation
-├── policy.py                   # Top-level Policy(nn.Module) + save/from_pretrained
+├── policy.py                   # VLAPolicy(PolicyBase) — 7-module pipeline with overridable steps
+│                               # Steps: encode_observations, merge_tokens, run_backbone,
+│                               #        compute_loss, decode_prediction
 │
 ├── observation/
 │   ├── adapter.py              # ObservationAdapterBase — encode(raw_obs) → ObservationBatch
@@ -1230,11 +1237,11 @@ class HorizonConfig:
 
 **Caching Strategy (Static / Dynamic Split):**
 
-| Component | Cache Policy | Refresh Rate |
-|-----------|-------------|--------------|
-| Vision encoder output | Static within replan window | 5–10 Hz (camera rate) |
-| Language tokens / KV-cache | Static until instruction changes | On new instruction |
-| Action expert KV-cache | Dynamic, rebuilt each replan | 5–20 Hz |
+| Component                  | Cache Policy                     | Refresh Rate          |
+| -------------------------- | -------------------------------- | --------------------- |
+| Vision encoder output      | Static within replan window      | 5–10 Hz (camera rate) |
+| Language tokens / KV-cache | Static until instruction changes | On new instruction    |
+| Action expert KV-cache     | Dynamic, rebuilt each replan     | 5–20 Hz               |
 
 The vision encoder is the most expensive forward pass. By caching its output and only rerunning when a new camera frame arrives, inference cost drops ~40–60%.
 
