@@ -72,3 +72,20 @@ class TestConcatMerger:
 
     def test_registry(self) -> None:
         assert "concat" in merger_registry.list()
+
+    def test_inherits_base(self) -> None:
+        from yavla.models.protocols import TokenMergerBase
+
+        m = self._make_merger(num_readout=8, dim=64)
+        assert isinstance(m, TokenMergerBase)
+
+    def test_incomplete_merger_raises(self) -> None:
+        from yavla.models.protocols import TokenMergerBase
+
+        with pytest.raises(TypeError):
+            # Missing merge() implementation
+            class BadMerger(TokenMergerBase):
+                pass
+
+            BadMerger()
+

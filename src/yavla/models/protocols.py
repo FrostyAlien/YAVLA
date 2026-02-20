@@ -160,6 +160,17 @@ class ProprioEncoderBase(nn.Module, ABC):
     @abstractmethod
     def encode_proprio(self, proprio: Tensor) -> Tensor: ...
 
+
+class TokenMergerBase(nn.Module, ABC):
+    @abstractmethod
+    def merge(
+        self,
+        vision_tokens: Tensor,
+        proprio_tokens: Tensor,
+        language_tokens: Tensor,
+        language_attn_mask: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor]: ...
+
 class PolicyBase(nn.Module, ABC):
     """Minimal contract for all YAVLA policies.
 

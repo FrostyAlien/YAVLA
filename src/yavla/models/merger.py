@@ -8,6 +8,7 @@ from typing import Any
 import torch
 from torch import Tensor, nn
 
+from yavla.models.protocols import TokenMergerBase
 from yavla.models.registry import Registry
 
 merger_registry: Registry[Any, nn.Module] = Registry("merger")
@@ -19,7 +20,7 @@ class TokenMergerConfig:
     num_readout_tokens: int = 64
 
 
-class ConcatMerger(nn.Module):
+class ConcatMerger(TokenMergerBase):
     def __init__(self, config: TokenMergerConfig, backbone_dim: int) -> None:
         super().__init__()
         self._config = config

@@ -29,6 +29,7 @@ from yavla.models.protocols import (
     IntegrationMode,
     PolicyBase,
     ProprioEncoderProto,
+    TokenMergerBase,
     TokenMergerProto,
     VisionEncoderProto,
     validate_integration,
