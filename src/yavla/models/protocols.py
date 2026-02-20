@@ -1,0 +1,179 @@
+"""Protocols, ABC base classes, and capability negotiation for model modules."""
+
+from __future__ import annotations
+
+import enum
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Any, Protocol, runtime_checkable
+
+import torch
+from torch import Tensor, nn
+
+from yavla.models.types import (
+    ActionChunk,
+    ActionPrediction,
+    ActionSpaceSpec,
+    BackboneOutput,
+    LossDict,
+    TrainingBatch,
+)
+
+
+class IntegrationMode(enum.Enum):
+    READOUT = "readout"
+    JOINT_TOKENS = "joint_tokens"
+
+
+@dataclass
+class BackboneCapabilities:
+    supported_modes: set[IntegrationMode]
+    supports_kv_cache: bool = False
+
+
+@dataclass
+class ActionHeadRequirements:
+    required_mode: IntegrationMode
+    accepts_readout: bool = True
+
+
+# ---------------------------------------------------------------------------
+# Protocols
+# ---------------------------------------------------------------------------
+
+
+@runtime_checkable
+class VisionEncoderProto(Protocol):
+    @property
+    def output_dim(self) -> int: ...
+    @property
+    def num_patches(self) -> int: ...
+    def encode_images(self, images: dict[str, Tensor]) -> Tensor: ...
+
+
+@runtime_checkable
+class BackboneProto(Protocol):
+    @property
+    def capabilities(self) -> BackboneCapabilities: ...
+    @property
+    def hidden_dim(self) -> int: ...
+    @property
+    def tokenizer(self) -> Any: ...
+    def forward(self, inputs_embeds: Tensor, attention_mask: Tensor, token_type_ids: Tensor) -> BackboneOutput: ...
+
+
+@runtime_checkable
+class ActionHeadProto(Protocol):
+    @property
+    def requirements(self) -> ActionHeadRequirements: ...
+    def compute_loss(self, backbone_output: BackboneOutput, batch: TrainingBatch) -> LossDict: ...
+    def predict(self, backbone_output: BackboneOutput) -> ActionPrediction: ...
+
+
+@runtime_checkable
+class ActionDecoderProto(Protocol):
+    @property
+    def action_space_spec(self) -> ActionSpaceSpec: ...
+    def decode(self, pred: ActionPrediction) -> ActionChunk: ...
+
+
+@runtime_checkable
+class ProprioEncoderProto(Protocol):
+    @property
+    def output_dim(self) -> int: ...
+    def encode_proprio(self, proprio: Tensor) -> Tensor: ...
+
+
+@runtime_checkable
+class TokenMergerProto(Protocol):
+    def merge(
+        self,
+        vision_tokens: Tensor,
+        proprio_tokens: Tensor,
+        language_tokens: Tensor,
+        language_attn_mask: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor]: ...
+
+
+# ---------------------------------------------------------------------------
+# ABC base classes
+# ---------------------------------------------------------------------------
+
+
+class VisionEncoderBase(nn.Module, ABC):
+    @property
+    @abstractmethod
+    def output_dim(self) -> int: ...
+
+    @property
+    @abstractmethod
+    def num_patches(self) -> int: ...
+
+    @abstractmethod
+    def encode_images(self, images: dict[str, Tensor]) -> Tensor: ...
+
+
+class BackboneBase(nn.Module, ABC):
+    @property
+    @abstractmethod
+    def capabilities(self) -> BackboneCapabilities: ...
+
+    @property
+    @abstractmethod
+    def hidden_dim(self) -> int: ...
+
+    @property
+    @abstractmethod
+    def tokenizer(self) -> Any: ...
+
+    @abstractmethod
+    def forward(self, inputs_embeds: Tensor, attention_mask: Tensor, token_type_ids: Tensor) -> BackboneOutput: ...
+
+
+class ActionHeadBase(nn.Module, ABC):
+    @property
+    @abstractmethod
+    def requirements(self) -> ActionHeadRequirements: ...
+
+    @abstractmethod
+    def compute_loss(self, backbone_output: BackboneOutput, batch: TrainingBatch) -> LossDict: ...
+
+    @abstractmethod
+    def predict(self, backbone_output: BackboneOutput) -> ActionPrediction: ...
+
+
+class ActionDecoderBase(nn.Module, ABC):
+    @property
+    @abstractmethod
+    def action_space_spec(self) -> ActionSpaceSpec: ...
+
+    @abstractmethod
+    def decode(self, pred: ActionPrediction) -> ActionChunk: ...
+
+
+class ProprioEncoderBase(nn.Module, ABC):
+    @property
+    @abstractmethod
+    def output_dim(self) -> int: ...
+
+    @abstractmethod
+    def encode_proprio(self, proprio: Tensor) -> Tensor: ...
+
+
+# ---------------------------------------------------------------------------
+# Capability validation
+# ---------------------------------------------------------------------------
+
+
+class IncompatibleError(Exception):
+    pass
+
+
+def validate_integration(backbone: BackboneProto, head: ActionHeadProto) -> IntegrationMode:
+    mode = head.requirements.required_mode
+    if mode not in backbone.capabilities.supported_modes:
+        raise IncompatibleError(
+            f"Head requires {mode.value} but backbone supports "
+            f"{{{', '.join(m.value for m in backbone.capabilities.supported_modes)}}}"
+        )
+    return mode
