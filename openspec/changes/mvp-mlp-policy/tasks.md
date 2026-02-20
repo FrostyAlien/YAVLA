@@ -30,8 +30,8 @@
 ## 4. Vision Encoder
 
 - [x] 4.1 Implement `VisionEncoderConfig` dataclass in `src/yavla/models/encoders/vision.py`
-- [x] 4.2 Implement `PaliGemmaVisionEncoder(VisionEncoderBase)` — holds reference to backbone's unwrapped `base_model` (NOT PeftModel wrapper, NOT its own copy), calls `base_model.get_image_features(pixel_values, return_dict=True).pooler_output` to get projected+scaled image tokens `[B, 256, D]`. Do NOT rescale. NOT frozen by default — freeze controlled by `FreezeConfig`. MVP supports single-camera only; raise `ValueError` if more than one camera key is provided.
-  <!-- Ref: PaliGemma get_image_features returns pooler_output (projected+scaled): https://github.com/huggingface/transformers/blob/556312cd/src/transformers/models/paligemma/modeling_paligemma.py#L92-L100
+- [x] 4.2 Implement `PaliGemmaVisionEncoder(VisionEncoderBase)` — holds reference to backbone's unwrapped `base_model` (NOT PeftModel wrapper, NOT its own copy), calls `base_model.get_image_features(pixel_values)` to get projected+scaled image tokens `[B, num_patches, D]` (returns tensor directly, NOT a dict). Do NOT rescale. NOT frozen by default — freeze controlled by `FreezeConfig`. MVP supports single-camera only; raise `ValueError` if more than one camera key is provided.
+  <!-- Ref: PaliGemma get_image_features returns projected+scaled tensor directly: https://github.com/huggingface/transformers/blob/556312cd/src/transformers/models/paligemma/modeling_paligemma.py#L92-L100
        Ref: π0 reuses PaliGemma's SigLIP: https://github.com/Physical-Intelligence/openpi/blob/981483dc/src/openpi/models/pi0.py#L108-L130 -->
 - [x] 4.3 Register `PaliGemmaVisionEncoder` with `vision_registry`
 

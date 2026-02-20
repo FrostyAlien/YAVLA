@@ -48,13 +48,13 @@ Reference implementations (with verified source URLs):
 
 ### D3: Use PaliGemma's built-in SigLIP, configurable freeze + LoRA via `peft`
 
-**Choice:** Reuse PaliGemma's built-in SigLIP vision tower and linear projector rather than loading a separate SigLIP model. Our `VisionEncoder` module is a thin wrapper that calls `paligemma_model.get_image_features(pixel_values, return_dict=True).pooler_output` to get projected image tokens already in the Gemma embedding space.
+**Choice:** Reuse PaliGemma's built-in SigLIP vision tower and linear projector rather than loading a separate SigLIP model. Our `VisionEncoder` module is a thin wrapper that calls `paligemma_model.get_image_features(pixel_values)` to get projected image tokens already in the Gemma embedding space `[B, num_patches, D]`.
 
 **Why reuse PaliGemma's SigLIP (not separate):** PaliGemma's SigLIP and projector are pretrained together — the projector maps SigLIP features into Gemma's embedding space. Loading a separate SigLIP would require training a new projector from scratch. π0 confirms this pattern: it calls `self.PaliGemma.img(images)` to get vision tokens. See [pi0.py#L108-L130](https://github.com/Physical-Intelligence/openpi/blob/981483dc/src/openpi/models/pi0.py#L108-L130).
 
 **Freeze/LoRA policy (NOT frozen by default):** The VLM is NOT frozen by default. Instead, `FreezeConfig` specifies which module groups to freeze (e.g. `["vision_tower", "multi_modal_projector"]`) and which to apply LoRA to (e.g. `["language_model.model.layers"]`). LoRA is applied via the `peft` library (`peft.get_peft_model` + `LoraConfig`), NOT a custom implementation. This matches how OpenVLA-OFT fine-tunes with LoRA on the LLM while freezing vision. See [train.py#L89-L120](https://github.com/moojink/openvla-oft/blob/e4287e94/prismatic/training/train.py#L89-L120).
 
-**Projector details:** PaliGemma uses a single `nn.Linear(vision_hidden_size, projection_dim)` + scaling by `1/sqrt(hidden_size)` (NOT L2 normalization). The wrapper calls `get_image_features(..., return_dict=True).pooler_output` which returns already-projected-and-scaled tokens — do NOT rescale again. See [modeling_paligemma.py#L92-L100](https://github.com/huggingface/transformers/blob/556312cd/src/transformers/models/paligemma/modeling_paligemma.py#L92-L100).
+**Projector details:** PaliGemma uses a single `nn.Linear(vision_hidden_size, projection_dim)` + scaling by `1/sqrt(hidden_size)` (NOT L2 normalization). The wrapper calls `get_image_features(pixel_values)` which returns already-projected-and-scaled tokens as a `Tensor[B, num_patches, D]` — do NOT rescale again. Note: `PaliGemmaForConditionalGeneration.get_image_features()` returns the tensor directly, not a dict. See [modeling_paligemma.py#L92-L100](https://github.com/huggingface/transformers/blob/556312cd/src/transformers/models/paligemma/modeling_paligemma.py#L92-L100).
 
 ### D4: Token merger builds `inputs_embeds` with `token_type_ids`
 

@@ -4,7 +4,7 @@
      Ref: π0 reuses PaliGemma's SigLIP: https://github.com/Physical-Intelligence/openpi/blob/981483dc/src/openpi/models/pi0.py#L108-L130 -->
 
 ### Requirement: PaliGemma vision encoder wrapper
-`PaliGemmaVisionEncoder(VisionEncoderBase)` SHALL be a thin wrapper that holds a reference to the backbone's unwrapped `PaliGemmaForConditionalGeneration` base model (NOT the PeftModel wrapper, NOT its own copy) and calls `base_model.get_image_features(pixel_values, return_dict=True).pooler_output` to obtain image tokens already projected and scaled into the Gemma embedding space. It does NOT load a separate SigLIP model. It does NOT rescale — `get_image_features` applies `1/sqrt(hidden_size)` internally. When LoRA is applied, the vision encoder MUST use the unwrapped base model (via `backbone.base_model`) because `PeftModel` may not reliably proxy `get_image_features()`.
+`PaliGemmaVisionEncoder(VisionEncoderBase)` SHALL be a thin wrapper that holds a reference to the backbone's unwrapped `PaliGemmaForConditionalGeneration` base model (NOT the PeftModel wrapper, NOT its own copy) and calls `base_model.get_image_features(pixel_values)` to obtain image tokens already projected and scaled into the Gemma embedding space as a `Tensor[B, num_patches, D]` (returned directly, NOT as a dict). It does NOT load a separate SigLIP model. It does NOT rescale — `get_image_features` applies `1/sqrt(hidden_size)` internally. When LoRA is applied, the vision encoder MUST use the unwrapped base model (via `backbone.base_model`) because `PeftModel` may not reliably proxy `get_image_features()`.
 
 #### Scenario: Encode single-camera batch
 - **WHEN** `encode_images({"cam0": tensor[B, 3, 224, 224]})` is called (encoder already holds PaliGemma ref)
