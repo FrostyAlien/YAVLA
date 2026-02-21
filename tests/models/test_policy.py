@@ -56,17 +56,29 @@ class TestSimpleActionDecoder:
         dec = SimpleActionDecoder(action_space_spec=spec)
         assert dec.action_space_spec is spec
 
-
-
     def test_unnormalize_without_clamping(self) -> None:
         limits = torch.tensor([[0.0, 10.0]])
-        spec = ActionSpaceSpec(names=["x"], units=["m"], limits=limits, clip_unnormalized=False)
+        spec = ActionSpaceSpec(names=["x"], units=["m"], limits=limits)
         dec = SimpleActionDecoder(action_space_spec=spec)
         # Input 2.0 unnormalized without clamping:
         # (2.0 + 1) / 2 * 10 + 0 = 1.5 * 10 = 15.0
         pred = ActionPrediction(mean=torch.tensor([[[2.0]]]))
         chunk = dec.decode(pred)
         assert chunk.actions[0, 0, 0].item() == pytest.approx(15.0, abs=1e-5)
+
+    def test_unnormalize_negative_out_of_range(self) -> None:
+        limits = torch.tensor([[0.0, 10.0]])
+        spec = ActionSpaceSpec(names=["x"], units=["m"], limits=limits)
+        dec = SimpleActionDecoder(action_space_spec=spec)
+        # Input -2.0 without clamping: (-2.0 + 1) / 2 * 10 + 0 = -0.5 * 10 = -5.0
+        pred = ActionPrediction(mean=torch.tensor([[[-2.0]]]))
+        chunk = dec.decode(pred)
+        assert chunk.actions[0, 0, 0].item() == pytest.approx(-5.0, abs=1e-5)
+
+    def test_action_space_spec_rejects_clip_unnormalized(self) -> None:
+        with pytest.raises(TypeError):
+            ActionSpaceSpec(names=["x"], units=["m"], limits=None, clip_unnormalized=False)
+
 
 class TestPolicyConfig:
     def test_defaults(self) -> None:
@@ -214,11 +226,9 @@ class TestPolicyBaseEnforcement:
             class BadPolicy(PolicyBase):
                 config_class = PolicyConfig
 
-                def forward(self, batch):
-                    ...
+                def forward(self, batch): ...
 
-                def predict(self, obs):
-                    ...
+                def predict(self, obs): ...
 
     def test_missing_config_class_raises(self) -> None:
         from yavla.models.protocols import PolicyBase
@@ -228,9 +238,6 @@ class TestPolicyBaseEnforcement:
             class BadPolicy(PolicyBase):
                 name = "bad"
 
-                def forward(self, batch):
-                    ...
+                def forward(self, batch): ...
 
-                def predict(self, obs):
-                    ...
-
+                def predict(self, obs): ...
