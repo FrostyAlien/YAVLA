@@ -16,6 +16,7 @@ from yavla.models.protocols import (
     BackboneBase,
     PolicyBase,
     ProprioEncoderBase,
+    TokenMergerBase,
     VisionEncoderBase,
     validate_integration,
 )
@@ -46,7 +47,7 @@ class VLAPolicy(PolicyBase):
         self,
         vision_encoder: VisionEncoderBase,
         proprio_encoder: ProprioEncoderBase,
-        merger: nn.Module,
+        merger: TokenMergerBase,
         backbone: BackboneBase,
         action_head: ActionHeadBase,
         decoder: ActionDecoderBase,
@@ -230,7 +231,7 @@ class VLAPolicy(PolicyBase):
                 policy.backbone.base_model,
                 str(path / "adapter"),
             )
-            policy.backbone.model.enable_input_require_grads()
+            policy.backbone.model.enable_input_require_grads()  # pyright: ignore[reportCallIssue]
 
             # Load non-VLM module weights (action head, proprio encoder, merger)
             if (path / "non_vlm_weights.safetensors").exists():
@@ -288,7 +289,7 @@ def build_policy(config: PolicyConfig) -> VLAPolicy:
         )
         peft_model = peft.get_peft_model(base_model, lora_config)
         # 5. Enable input require grads for gradient flow
-        peft_model.enable_input_require_grads()
+        peft_model.enable_input_require_grads()  # pyright: ignore[reportCallIssue]
 
     # 6-7. Gradient checkpointing
     if config.backbone.gradient_checkpointing:

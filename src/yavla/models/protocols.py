@@ -130,6 +130,29 @@ class BackboneBase(nn.Module, ABC):
     @abstractmethod
     def forward(self, inputs_embeds: Tensor, attention_mask: Tensor, token_type_ids: Tensor) -> BackboneOutput: ...
 
+    @property
+    def base_model(self) -> Any:
+        """The unwrapped model (never a PEFT wrapper).
+
+        Used to access the original embedding layer / model config, and as the
+        base argument when loading a PEFT adapter via ``PeftModel.from_pretrained``.
+        """
+        raise NotImplementedError
+
+    @property
+    def model(self) -> Any:
+        """The active forward-pass model.
+
+        Equals ``base_model`` when no adapter is applied; replaced with a
+        ``PeftModel`` wrapper when LoRA is active. Used for adapter save/load
+        and gradient-flow setup (``enable_input_require_grads``).
+        """
+        raise NotImplementedError
+
+    @model.setter
+    def model(self, value: Any) -> None:
+        raise NotImplementedError
+
 
 class ActionHeadBase(nn.Module, ABC):
     @property
