@@ -31,7 +31,7 @@ context: |
   MCP servers available:
     - context7: library documentation lookup
     - codex: GPT-5.3-codex model for code generation/analysis and peer review
-    - kindly-web-search: web search + page scraping
+    - grok-search: web search + page scraping (native web tools first; escalate to Grok for deep research, conflicts, or platform-specific search; models: grok-4.1-fast | grok-4.20-beta (default) | grok-4.1-thinking | grok-4.1-expert; all output must cite sources)
     - pdf-reader: PDF text/table extraction (useful for reading papers)
 
   Conventions:

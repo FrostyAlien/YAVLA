@@ -96,8 +96,50 @@ Subclasses can override pipeline steps for different VLA paradigms: For example,
 ## Available MCP Servers
 
 - **codex** — GPT-5.3-codex model for code generation/analysis and peer review
-- **kindly-web-search** — web search + page scraping for looking up docs, issues, and references
+- **grok-search** — web search + page scraping (see Grok Search policy below)
 - **pdf-reader** — PDF text/table extraction (useful for reading papers)
+
+## Grok Search Policy
+
+### Activation & Routing
+
+- Use **native web tools first** for simple and quick lookups.
+- **Escalate to Grok Search** when any of these conditions apply:
+  - Deep research, lateral comparison, or long-form content extraction is needed
+  - Native web results are conflicting or insufficient
+  - Platform-specific search is required (GitHub / Reddit / X / etc.)
+  - High-stakes conclusions need multi-source cross-verification
+- **Final verification**: critical conclusions must always be traced back to official/primary sources.
+
+### Model Selection (mandatory)
+
+Before every `web_search` or `web_fetch` call, run `switch_model` to select the appropriate model. Default to `grok-4.20-beta` when the task type is unclear.
+
+| Scenario              | Model                 | Triggering Conditions                                                                                  |
+| --------------------- | --------------------- | ------------------------------------------------------------------------------------------------------ |
+| Quick lookup          | `grok-4.1-fast`       | Simple fact queries, single questions, batch searches, real-time news, **speed priority**              |
+| Daily search          | `grok-4.20-beta`      | General technical searches, Chinese information, solution comparison, information collection, daily dev |
+| Large document fetch  | `grok-4.1-expert`     | Fetch large pages, complete content extraction, **structured reports**, strict instruction compliance  |
+| Deep research         | `grok-4.1-thinking`   | Academic research, complex reasoning, **multi-source cross-verification**, opinion synthesis, highest credibility |
+
+### Execution Strategy
+
+- **Query construction**: `web_search` for breadth, `web_fetch` for depth; set `platform` parameter for platform-specific searches.
+- **Search execution**: start with summaries → fetch full content for key URLs → if results are insufficient, refine the query and retry (never give up after a single attempt).
+- **Result integration**: cross-verify across sources + **mandatory source citation** `[Title](URL)` + annotate dates for time-sensitive information.
+
+### Error Recovery
+
+- Connection failure → run `get_config_info` to diagnose
+- No results → broaden or rephrase the query
+- Timeout → search alternative sources
+
+### Core Constraints
+
+- All search output **must include source citations** — no unsourced claims
+- Never abandon a search after a single failed attempt — retry with adjusted queries
+- Never present unverified assumptions as facts
+- When results conflict, assess **source credibility** (official docs > peer-reviewed papers > blog posts > forum answers) and flag unresolved discrepancies to the user
 
 ## AI Development Rules
 
