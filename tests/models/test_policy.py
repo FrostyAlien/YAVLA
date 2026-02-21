@@ -11,6 +11,7 @@ from yavla.models.decoder import SimpleActionDecoder
 from yavla.models.config import PolicyConfig
 from yavla.models.types import (
     ActionChunk,
+    ActionNormalizationConfig,
     ActionPrediction,
     ActionSpaceSpec,
     BackboneOutput,
@@ -22,15 +23,10 @@ from yavla.models.types import (
 
 
 class TestSimpleActionDecoder:
-    def test_passthrough_no_limits(self) -> None:
+    def test_bounds_rejects_missing_limits(self) -> None:
         spec = ActionSpaceSpec(names=["x"], units=["m"], limits=None)
-        dec = SimpleActionDecoder(action_space_spec=spec, dt_hz=10.0)
-        pred = ActionPrediction(mean=torch.tensor([[[0.5, -0.3]]]))
-        chunk = dec.decode(pred)
-        assert isinstance(chunk, ActionChunk)
-        assert torch.allclose(chunk.actions, pred.mean)
-        assert chunk.dt_hz == 10.0
-        assert chunk.chunk_len == 1
+        with pytest.raises(ValueError, match="bounds mode requires"):
+            SimpleActionDecoder(action_space_spec=spec, dt_hz=10.0)
 
     def test_unnormalize_with_limits(self) -> None:
         # limits: dim0 in [0, 10], dim1 in [-5, 5]
@@ -52,7 +48,8 @@ class TestSimpleActionDecoder:
         assert chunk.actions[0, 0, 0].item() == pytest.approx(5.0, abs=1e-5)
 
     def test_action_space_spec_property(self) -> None:
-        spec = ActionSpaceSpec(names=[], units=[], limits=None)
+        limits = torch.tensor([[0.0, 1.0]])
+        spec = ActionSpaceSpec(names=["x"], units=["m"], limits=limits)
         dec = SimpleActionDecoder(action_space_spec=spec)
         assert dec.action_space_spec is spec
 
@@ -78,6 +75,68 @@ class TestSimpleActionDecoder:
     def test_action_space_spec_rejects_clip_unnormalized(self) -> None:
         with pytest.raises(TypeError):
             ActionSpaceSpec(names=["x"], units=["m"], limits=None, clip_unnormalized=False)
+
+
+class TestActionNormalization:
+    def test_default_mode_is_bounds(self) -> None:
+        cfg = PolicyConfig()
+        assert cfg.action_normalization.mode == "bounds"
+
+    def test_bounds_rejects_bad_limits_shape(self) -> None:
+        limits = torch.tensor([0.0, 10.0])  # 1-D, should be [action_dim, 2]
+        spec = ActionSpaceSpec(names=["x"], units=["m"], limits=limits)
+        with pytest.raises(ValueError, match="limits shaped"):
+            SimpleActionDecoder(action_space_spec=spec)
+
+    def test_zscore_rejects_missing_stats(self) -> None:
+        spec = ActionSpaceSpec(names=["x"], units=["m"], limits=None)
+        norm = ActionNormalizationConfig(mode="z-score")
+        with pytest.raises(ValueError, match="mean.*std"):
+            SimpleActionDecoder(action_space_spec=spec, normalization=norm)
+
+    def test_unknown_mode_raises(self) -> None:
+        spec = ActionSpaceSpec(names=["x"], units=["m"], limits=None)
+        norm = ActionNormalizationConfig(mode="bogus")
+        with pytest.raises(ValueError, match="Unknown normalization mode"):
+            SimpleActionDecoder(action_space_spec=spec, normalization=norm)
+
+    def test_zscore_decode_roundtrip(self) -> None:
+        spec = ActionSpaceSpec(names=["x"], units=["m"], limits=None)
+        norm = ActionNormalizationConfig(mode="z-score")
+        mean = torch.tensor([5.0])
+        std = torch.tensor([2.0])
+        stats = {"mean": mean, "std": std}
+        dec = SimpleActionDecoder(action_space_spec=spec, normalization=norm, action_stats=stats)
+        # Normalized value 0.0 should decode to mean (5.0)
+        pred = ActionPrediction(mean=torch.tensor([[[0.0]]]))
+        chunk = dec.decode(pred)
+        assert chunk.actions[0, 0, 0].item() == pytest.approx(5.0, abs=1e-4)
+
+    def test_zscore_std_zero_maps_to_mean(self) -> None:
+        spec = ActionSpaceSpec(names=["x"], units=["m"], limits=None)
+        norm = ActionNormalizationConfig(mode="z-score")
+        stats = {"mean": torch.tensor([3.0]), "std": torch.tensor([0.0])}
+        dec = SimpleActionDecoder(action_space_spec=spec, normalization=norm, action_stats=stats)
+        # With std=0, unnormalize: 0.0 * (0 + eps) + 3.0 ≈ 3.0
+        pred = ActionPrediction(mean=torch.tensor([[[0.0]]]))
+        chunk = dec.decode(pred)
+        assert chunk.actions[0, 0, 0].item() == pytest.approx(3.0, abs=1e-4)
+
+    def test_zscore_std_zero_nonzero_input_maps_to_mean(self) -> None:
+        """std==0 dims map to mean regardless of a_norm value."""
+        spec = ActionSpaceSpec(names=["x"], units=["m"], limits=None)
+        norm = ActionNormalizationConfig(mode="z-score")
+        stats = {"mean": torch.tensor([3.0]), "std": torch.tensor([0.0])}
+        dec = SimpleActionDecoder(action_space_spec=spec, normalization=norm, action_stats=stats)
+        pred = ActionPrediction(mean=torch.tensor([[[5.0]]]))
+        chunk = dec.decode(pred)
+        assert chunk.actions[0, 0, 0].item() == pytest.approx(3.0, abs=1e-4)
+
+    def test_bounds_missing_limits_raises(self) -> None:
+        spec = ActionSpaceSpec(names=["x"], units=["m"], limits=None)
+        norm = ActionNormalizationConfig(mode="bounds")
+        with pytest.raises(ValueError, match="bounds mode requires"):
+            SimpleActionDecoder(action_space_spec=spec, normalization=norm)
 
 
 class TestPolicyConfig:
@@ -145,7 +204,8 @@ class TestVLAPolicy:
         )
 
         # Real decoder
-        spec = ActionSpaceSpec(names=[], units=[], limits=None)
+        limits = torch.tensor([[-1.0, 1.0]] * self.ADIM)
+        spec = ActionSpaceSpec(names=["a"] * self.ADIM, units=["m"] * self.ADIM, limits=limits)
         decoder = SimpleActionDecoder(action_space_spec=spec, dt_hz=10.0)
 
         cfg = PolicyConfig()

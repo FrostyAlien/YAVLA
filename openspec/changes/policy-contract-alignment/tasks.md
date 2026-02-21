@@ -1,8 +1,8 @@
 ## 1. Stabilize Current Tests (Baseline Contract Alignment)
 
-- [ ] 1.1 Fix the current failing unit test by removing unsupported `clip_unnormalized` usage in `tests/models/test_policy.py` (align with `ActionSpaceSpec` contract).
-- [ ] 1.2 Add/adjust decoder tests to explicitly assert the “no implicit clamp” behavior for out-of-range normalized actions (e.g., `2.0 → 15.0` under `[0, 10]` limits).
-- [ ] 1.3 Run the full unit test suite (`tests/`) in the dev env and confirm a clean baseline for subsequent work (note: on macOS, `pixi run` may crash; use `.pixi/envs/dev/bin/pytest` as a fallback).
+- [x] 1.1 Fix the current failing unit test by removing unsupported `clip_unnormalized` usage in `tests/models/test_policy.py` (align with `ActionSpaceSpec` contract).
+- [x] 1.2 Add/adjust decoder tests to explicitly assert the "no implicit clamp" behavior for out-of-range normalized actions (e.g., `2.0 → 15.0` under `[0, 10]` limits).
+- [x] 1.3 Run the full unit test suite (`tests/`) in the dev env and confirm a clean baseline for subsequent work (note: on macOS, `pixi run` may crash; use `.pixi/envs/dev/bin/pytest` as a fallback).
 
 ## 2. Implement Policy-Declared Action Normalization (Config + Validation)
 

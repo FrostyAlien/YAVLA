@@ -60,7 +60,8 @@ def _make_policy(D: int = 64, N_READOUT: int = 8, CHUNK: int = 5, ADIM: int = 7)
     )
 
     # Real decoder
-    spec = ActionSpaceSpec(names=["x"] * ADIM, units=["m"] * ADIM, limits=None)
+    limits = torch.tensor([[-1.0, 1.0]] * ADIM)
+    spec = ActionSpaceSpec(names=["x"] * ADIM, units=["m"] * ADIM, limits=limits)
     decoder = SimpleActionDecoder(action_space_spec=spec, dt_hz=10.0)
 
     cfg = PolicyConfig()

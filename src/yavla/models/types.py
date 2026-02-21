@@ -80,14 +80,26 @@ class TrainingBatch:
 
 
 @dataclass
+class ActionNormalizationConfig:
+    """Policy-declared action normalization mode.
+
+    - ``bounds``: actions in [-1, 1], unnormalized via ActionSpaceSpec.limits.
+    - ``z-score``: actions z-score normalized using stored mean/std.
+    """
+
+    mode: str = "bounds"  # "bounds" | "z-score"
+    eps: float = 1e-6  # stability epsilon for z-score division
+
+
+@dataclass
 class ActionSpaceSpec:
     """Specification of a robot's action space."""
 
     names: list[str]
     units: list[str]
     # WARNING: The action decoder DOES NOT clamp unnormalized predictions to [-1, 1].
-    # To maximize inference speed by avoiding GPU-to-CPU syncs or extra graph ops, 
-    # the Action Decoder assumes the action head was successfully trained to output 
+    # To maximize inference speed by avoiding GPU-to-CPU syncs or extra graph ops,
+    # the Action Decoder assumes the action head was successfully trained to output
     # natively bounded values. Any clipping must be handled by the environment or dataset.
     limits: Tensor | None  # [action_dim, 2] — (min, max) per dim; None = no normalization
     frame: str = ""

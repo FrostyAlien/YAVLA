@@ -65,9 +65,7 @@ class VLAPolicy(PolicyBase):
     # Overridable pipeline steps
     # ------------------------------------------------------------------
 
-    def encode_observations(
-        self, obs: ObservationBatch
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+    def encode_observations(self, obs: ObservationBatch) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         """Encode raw observations into embeddings.
 
         Returns:
@@ -101,9 +99,7 @@ class VLAPolicy(PolicyBase):
         """
         return self.merger.merge(image_embeds, proprio_embeds, lang_embeds, lang_attn_mask)
 
-    def run_backbone(
-        self, inputs_embeds: Tensor, attention_mask: Tensor, token_type_ids: Tensor
-    ) -> BackboneOutput:
+    def run_backbone(self, inputs_embeds: Tensor, attention_mask: Tensor, token_type_ids: Tensor) -> BackboneOutput:
         """Run the VLM backbone."""
         return self.backbone(inputs_embeds, attention_mask, token_type_ids)
 
@@ -173,9 +169,13 @@ class VLAPolicy(PolicyBase):
         with open(path / "checkpoint_meta.json", "w") as f:
             json.dump({"has_lora": lora_active}, f, indent=2)
 
-        # Action stats (placeholder — populated during training)
+        # Action stats (required for z-score mode; empty for bounds)
+        action_stats: dict[str, list[float]] = {}
+        if hasattr(self.decoder, "_action_stats") and self.decoder._action_stats is not None:
+            for k, v in self.decoder._action_stats.items():
+                action_stats[k] = v.tolist()
         with open(path / "action_stats.json", "w") as f:
-            json.dump({}, f)
+            json.dump(action_stats, f)
 
         # Embodiment info
         embodiment = {
@@ -200,6 +200,15 @@ class VLAPolicy(PolicyBase):
 
         config = _dict_to_config(cfg_dict)
 
+        # Load action stats (required for z-score mode)
+        action_stats: dict[str, torch.Tensor] | None = None
+        stats_path = path / "action_stats.json"
+        if stats_path.exists():
+            with open(stats_path) as f:
+                raw_stats = json.load(f)
+            if raw_stats:
+                action_stats = {k: torch.tensor(v) for k, v in raw_stats.items()}
+
         # Check embodiment compatibility
         with open(path / "embodiment.json") as f:
             embodiment = json.load(f)
@@ -217,7 +226,7 @@ class VLAPolicy(PolicyBase):
                 meta = json.load(f)
             has_lora = meta.get("has_lora", False)
 
-        policy = build_policy(config)
+        policy = build_policy(config, action_stats=action_stats)
 
         from safetensors.torch import load_file
 
@@ -249,7 +258,10 @@ class VLAPolicy(PolicyBase):
         return policy
 
 
-def build_policy(config: PolicyConfig) -> VLAPolicy:
+def build_policy(
+    config: PolicyConfig,
+    action_stats: dict[str, torch.Tensor] | None = None,
+) -> VLAPolicy:
     from transformers import AutoModelForVision2Seq, AutoProcessor
 
     from yavla.models.backbone import VLMBackbone
@@ -326,7 +338,12 @@ def build_policy(config: PolicyConfig) -> VLAPolicy:
     validate_integration(backbone, action_head)
 
     # Build decoder
-    decoder = SimpleActionDecoder(action_space_spec=config.action_space, dt_hz=config.dt_hz)
+    decoder = SimpleActionDecoder(
+        action_space_spec=config.action_space,
+        dt_hz=config.dt_hz,
+        normalization=config.action_normalization,
+        action_stats=action_stats,
+    )
 
     return VLAPolicy(
         vision_encoder=vision_encoder,
@@ -381,18 +398,24 @@ def _dict_to_config(d: dict) -> PolicyConfig:
     from yavla.models.encoders.vision import VisionEncoderConfig
     from yavla.models.heads.mlp import MLPHeadConfig
     from yavla.models.merger import TokenMergerConfig
-    from yavla.models.types import ActionSpaceSpec, FreezeConfig, ProprioSpec
+    from yavla.models.types import ActionNormalizationConfig, ActionSpaceSpec, FreezeConfig, ProprioSpec
 
     return PolicyConfig(
         vision_encoder=VisionEncoderConfig(**_filter_known_fields(VisionEncoderConfig, d.get("vision_encoder", {}))),
-        proprio_encoder=ProprioEncoderConfig(**_filter_known_fields(ProprioEncoderConfig, d.get("proprio_encoder", {}))),
+        proprio_encoder=ProprioEncoderConfig(
+            **_filter_known_fields(ProprioEncoderConfig, d.get("proprio_encoder", {}))
+        ),
         merger=TokenMergerConfig(**_filter_known_fields(TokenMergerConfig, d.get("merger", {}))),
         backbone=BackboneConfig(**_filter_known_fields(BackboneConfig, d.get("backbone", {}))),
         action_head=MLPHeadConfig(**_filter_known_fields(MLPHeadConfig, d.get("action_head", {}))),
         freeze=FreezeConfig(**_filter_known_fields(FreezeConfig, d.get("freeze", {}))),
-        action_space=ActionSpaceSpec(**_filter_known_fields(ActionSpaceSpec, d.get("action_space", {"names": [], "units": [], "limits": None}))),
+        action_normalization=ActionNormalizationConfig(
+            **_filter_known_fields(ActionNormalizationConfig, d.get("action_normalization", {}))
+        ),
+        action_space=ActionSpaceSpec(
+            **_filter_known_fields(ActionSpaceSpec, d.get("action_space", {"names": [], "units": [], "limits": None}))
+        ),
         proprio=ProprioSpec(**_filter_known_fields(ProprioSpec, d.get("proprio", {"names": [], "units": []}))),
         dt_hz=d.get("dt_hz", 10.0),
         config_version=d.get("config_version", "1.0"),
     )
-
