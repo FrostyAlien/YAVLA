@@ -28,9 +28,9 @@
 
 ## Phase 5: Entry Point & Logging
 
-- [ ] 5.1 Implement `scripts/train.py` with tyro CLI composing `TrainingConfig` + `PolicyConfig`; launchable via `python` or `accelerate launch`
-- [ ] 5.2 Wire `pixi run train` to `scripts/train.py` in `pixi.toml`
-- [ ] 5.3 Implement logging in `Trainer.run()`: use `accelerator.log()` for WandB when `config.wandb=True`, `accelerator.print()` for console; log `LossDict` scalars + `train/lr` + `train/grad_norm` every `log_freq` steps
+- [x] 5.1 Implement `scripts/train.py` with tyro CLI composing `TrainingConfig` + `PolicyConfig`; launchable via `python` or `accelerate launch`
+- [x] 5.2 Wire `pixi run train` to `scripts/train.py` in `pixi.toml`
+- [x] 5.3 Implement logging in `Trainer.run()`: use `accelerator.log()` for WandB when `config.wandb=True`, `accelerator.print()` for console; log `LossDict` scalars + `train/lr` + `train/grad_norm` every `log_freq` steps
 
 ## Phase 6: Advanced (post-MVP)
 
