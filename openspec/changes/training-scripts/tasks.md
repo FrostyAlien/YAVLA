@@ -8,10 +8,10 @@
 
 ## Phase 2: Optimizer & Scheduler Factory
 
-- [ ] 2.1 Implement `make_optimizer_and_scheduler(policy, config, num_training_steps)` in `src/yavla/training/optim.py`
-- [ ] 2.2 Implement two param groups: backbone at `lr * backbone_lr_scale`, rest at full `lr`
-- [ ] 2.3 Implement `SequentialLR([LinearLR, CosineAnnealingLR], milestones=[warmup_steps])` for warmup + cosine decay (built-in PyTorch schedulers, no custom code)
-- [ ] 2.4 Implement `use_policy_preset` merge: call `policy.get_optimizer_preset()` and override config defaults when non-None
+- [x] 2.1 Implement `make_optimizer_and_scheduler(policy, config, num_training_steps)` in `src/yavla/training/optim.py`
+- [x] 2.2 Implement two param groups: backbone at `lr * backbone_lr_scale`, rest at full `lr`
+- [x] 2.3 Implement `SequentialLR([LinearLR, CosineAnnealingLR], milestones=[warmup_steps])` for warmup + cosine decay (built-in PyTorch schedulers, no custom code)
+- [x] 2.4 Implement `use_policy_preset` merge: call `policy.get_optimizer_preset()` and override config defaults when non-None
 
 ## Phase 3: Training Loop (Accelerate-first)
 
