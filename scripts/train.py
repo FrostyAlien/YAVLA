@@ -1,14 +1,20 @@
-"""Train a VLA policy.
+"""Train a VLA policy (CLI entry point).
 
-Usage::
+Composes ``TrainingConfig`` and ``PolicyConfig`` into a single
+``TrainConfig`` dataclass parsed by **tyro**.  An optional ``--config``
+flag loads YAML defaults (e.g. ``configs/train.yaml``) before tyro
+applies CLI overrides, giving the standard YAML-first / CLI-override
+workflow.
 
-    # Direct (single GPU)
+Compatible with both single-process and distributed launches::
+
+    # Single GPU
     python scripts/train.py --training.num-steps 50000
 
     # Distributed via Accelerate
     accelerate launch scripts/train.py --training.num-steps 50000
 
-    # With YAML defaults + CLI overrides
+    # YAML defaults + CLI overrides
     python scripts/train.py --config configs/train.yaml --training.wandb True
 """
 
