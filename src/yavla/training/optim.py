@@ -1,4 +1,16 @@
-"""Optimizer and LR scheduler factory."""
+"""Optimizer and LR scheduler factory.
+
+Builds AdamW with discriminative learning rates (backbone at ``lr * backbone_lr_scale``,
+all other params at full ``lr``) and a warmup-then-cosine scheduler via built-in PyTorch
+``SequentialLR([LinearLR, CosineAnnealingLR])``.
+
+Discriminative LR is standard practice for fine-tuning VLA models: the pretrained
+backbone (vision + language) uses a lower LR to preserve general features, while the
+action head trains at full LR for fast task adaptation. Typical ratio is 0.1×.
+
+The returned optimizer/scheduler are **not** yet wrapped by Accelerate — the ``Trainer``
+calls ``accelerator.prepare()`` on them.
+"""
 
 from __future__ import annotations
 
