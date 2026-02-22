@@ -58,13 +58,13 @@ def metadata_records(obj: Any) -> list[dict[str, Any]]:
             length = len(records_obj[sequence_keys[0]])
             rows = []
             for idx in range(length):
-                row: dict[str, Any] = {}
+                entry: dict[str, Any] = {}
                 for key, value in records_obj.items():
                     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-                        row[key] = value[idx]
+                        entry[key] = value[idx]
                     else:
-                        row[key] = value
-                rows.append(row)
+                        entry[key] = value
+                rows.append(entry)
             return rows
 
     raise TypeError(f"Unsupported metadata table type: {type(obj)!r}")

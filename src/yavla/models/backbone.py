@@ -5,8 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-import torch
-from torch import Tensor, nn
+from torch import Tensor
 
 from yavla.models.protocols import BackboneBase, BackboneCapabilities, IntegrationMode
 from yavla.models.registry import Registry
@@ -52,7 +51,7 @@ class VLMBackbone(BackboneBase):
 
     @property
     def hidden_dim(self) -> int:
-        return self._base_model.config.text_config.hidden_size  # type: ignore[no-any-return]
+        return int(self._base_model.config.text_config.hidden_size)
 
     @property
     def tokenizer(self) -> Any:

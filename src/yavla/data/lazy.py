@@ -336,14 +336,13 @@ class LazyLeRobotDataset(Dataset[dict[str, Any]]):
                 _default_decoder_cache.clear()
                 self._decoder_paths.clear()
 
-        frames = decode_video_frames(
+        frames: torch.Tensor = decode_video_frames(
             video_path=video_path,
             timestamps=[float(timestamp)],
             tolerance_s=self.tolerance_s,
             backend=self.video_backend,
         )
         return frames.squeeze(0)
-
     def _decode_from_row_payload(
         self,
         value: Any,

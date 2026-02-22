@@ -35,7 +35,7 @@ from typing import TYPE_CHECKING, Any, cast
 from torch import nn
 
 if TYPE_CHECKING:
-    from accelerate import Accelerator
+    from accelerate import Accelerator  # type: ignore[import-untyped]
     from torch.utils.data import DataLoader
 
     from yavla.models.protocols import PolicyBase
@@ -68,7 +68,8 @@ def train_step(
     grad_norm = 0.0
     if accelerator.sync_gradients:
         norm = accelerator.clip_grad_norm_(policy.parameters(), config.optimizer.grad_clip_norm)
-        grad_norm = float(norm)  # type: ignore[arg-type]
+        if norm is not None:
+            grad_norm = float(norm)
     optimizer.step()
     optimizer.zero_grad(set_to_none=True)
     return loss_dict, grad_norm
@@ -160,7 +161,7 @@ class Trainer:
 
         # Fast-forward dataloader on resume (account for accumulation micro-batches)
         if start_step > 0:
-            from accelerate.data_loader import skip_first_batches
+            from accelerate.data_loader import skip_first_batches  # type: ignore[import-untyped]
 
             skip = start_step * cfg.gradient_accumulation_steps
             data_iter = iter(skip_first_batches(self.train_dataloader, skip))

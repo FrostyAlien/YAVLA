@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-import torch
 from torch import Tensor, nn
 
 from yavla.models.protocols import ProprioEncoderBase
@@ -32,7 +31,8 @@ class ProprioEncoder(ProprioEncoderBase):
         return self._config.backbone_dim
 
     def encode_proprio(self, proprio: Tensor) -> Tensor:
-        return self.proj(proprio).unsqueeze(1)  # [B, D] -> [B, 1, D]
+        projected: Tensor = self.proj(proprio)
+        return projected.unsqueeze(1)
 
 
 proprio_registry.register("linear", ProprioEncoderConfig)(ProprioEncoder)

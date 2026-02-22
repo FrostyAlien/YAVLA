@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-import torch
 from torch import Tensor
 
 
@@ -86,8 +85,8 @@ class ActionSpaceSpec:
     names: list[str]
     units: list[str]
     # WARNING: The action decoder DOES NOT clamp unnormalized predictions to [-1, 1].
-    # To maximize inference speed by avoiding GPU-to-CPU syncs or extra graph ops, 
-    # the Action Decoder assumes the action head was successfully trained to output 
+    # To maximize inference speed by avoiding GPU-to-CPU syncs or extra graph ops,
+    # the Action Decoder assumes the action head was successfully trained to output
     # natively bounded values. Any clipping must be handled by the environment or dataset.
     limits: Tensor | None  # [action_dim, 2] — (min, max) per dim; None = no normalization
     frame: str = ""

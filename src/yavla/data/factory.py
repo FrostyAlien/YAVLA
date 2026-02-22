@@ -140,7 +140,7 @@ def build_transform_pipeline(config: DataConfig, metadata: LeRobotDatasetMetadat
     if config.repack_keys:
         transforms.append(RepackTransform(config.repack_keys))
 
-    if config.normalize:
+    if config.normalize and metadata.stats is not None:
         transforms.append(
             NormalizeTransform(
                 stats=metadata.stats,

@@ -206,14 +206,13 @@ class ShardInterleavedDataset(IterableDataset[dict[str, Any]]):
         return None
 
     def _decode_video_at_timestamp(self, *, video_path: Path, timestamp: float) -> torch.Tensor:
-        frames = decode_video_frames(
+        frames: torch.Tensor = decode_video_frames(
             video_path=video_path,
             timestamps=[float(timestamp)],
             tolerance_s=self.tolerance_s,
             backend=self.video_backend,
         )
         return frames.squeeze(0)
-
     def _decode_from_row_payload(
         self,
         value: Any,

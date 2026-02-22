@@ -33,7 +33,7 @@ class ConcatMerger(TokenMergerBase):
         language_tokens: Tensor,
         language_attn_mask: Tensor,
     ) -> tuple[Tensor, Tensor, Tensor]:
-        B = vision_tokens.shape[0]
+        B = vision_tokens.shape[0]  # noqa: N806
         device = vision_tokens.device
         n_img = vision_tokens.shape[1]
         n_proprio = proprio_tokens.shape[1]

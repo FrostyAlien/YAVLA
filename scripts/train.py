@@ -84,7 +84,7 @@ def _pop_config_flag() -> TrainConfig | None:
     if isinstance(viz_raw, dict):
         from yavla.visualization.config import VizConfig
 
-        training_kwargs["viz"] = VizConfig(**_filter_fields(VizConfig, viz_raw))
+        training_kwargs["viz"] = VizConfig(**_filter_fields(VizConfig, viz_raw))  # type: ignore[arg-type]
     for k, v in raw.items():
         if k in TrainingConfig.__dataclass_fields__:
             training_kwargs[k] = v

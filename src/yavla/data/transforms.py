@@ -20,6 +20,7 @@ class DataTransformFn(Protocol):
 
     def __call__(self, sample: Sample) -> Sample:
         """Transform a sample and return the transformed sample."""
+        ...
 
 
 @dataclass(slots=True)

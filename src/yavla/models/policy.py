@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from torch import Tensor, nn
+from torch import Tensor
 
 from yavla.models.config import PolicyConfig
 from yavla.models.protocols import (
@@ -106,7 +106,8 @@ class VLAPolicy(PolicyBase):
         self, inputs_embeds: Tensor, attention_mask: Tensor, token_type_ids: Tensor
     ) -> BackboneOutput:
         """Run the VLM backbone."""
-        return self.backbone(inputs_embeds, attention_mask, token_type_ids)
+        result: BackboneOutput = self.backbone(inputs_embeds, attention_mask, token_type_ids)
+        return result
 
     def compute_loss(self, backbone_output: BackboneOutput, batch: TrainingBatch) -> LossDict:
         """Compute training loss from backbone output."""
@@ -261,11 +262,11 @@ def build_policy(config: PolicyConfig) -> VLAPolicy:
     from yavla.models.merger import ConcatMerger
 
     # 1. Load PaliGemma
-    base_model = AutoModelForVision2Seq.from_pretrained(
+    base_model = AutoModelForVision2Seq.from_pretrained(  # type: ignore[no-untyped-call]
         config.backbone.vlm_name,
         torch_dtype=torch.float32,
     )
-    tokenizer = AutoProcessor.from_pretrained(config.backbone.vlm_name).tokenizer
+    tokenizer = AutoProcessor.from_pretrained(config.backbone.vlm_name).tokenizer  # type: ignore[no-untyped-call]
 
     # 2. Store unwrapped ref
     unwrapped = base_model
@@ -340,7 +341,7 @@ def build_policy(config: PolicyConfig) -> VLAPolicy:
     )
 
 
-def _tensor_to_list(d: dict) -> None:
+def _tensor_to_list(d: dict[str, Any]) -> None:
     """Recursively convert Tensor values to lists for JSON serialization."""
     for k, v in d.items():
         if isinstance(v, torch.Tensor):
@@ -349,7 +350,7 @@ def _tensor_to_list(d: dict) -> None:
             _tensor_to_list(v)
 
 
-def _filter_known_fields(cls: type, d: dict) -> dict:
+def _filter_known_fields(cls: type, d: dict[str, Any]) -> dict[str, Any]:
     """Filter dict to only keys accepted by a dataclass constructor.
 
     Logs a warning for any dropped keys (forward-compatibility).
@@ -371,7 +372,7 @@ def _filter_known_fields(cls: type, d: dict) -> dict:
     return filtered
 
 
-def _dict_to_config(d: dict) -> PolicyConfig:
+def _dict_to_config(d: dict[str, Any]) -> PolicyConfig:
     """Reconstruct PolicyConfig from a dict (loaded from JSON).
 
     Unknown keys in sub-configs are silently dropped with a warning,
@@ -386,12 +387,16 @@ def _dict_to_config(d: dict) -> PolicyConfig:
 
     return PolicyConfig(
         vision_encoder=VisionEncoderConfig(**_filter_known_fields(VisionEncoderConfig, d.get("vision_encoder", {}))),
-        proprio_encoder=ProprioEncoderConfig(**_filter_known_fields(ProprioEncoderConfig, d.get("proprio_encoder", {}))),
+        proprio_encoder=ProprioEncoderConfig(
+            **_filter_known_fields(ProprioEncoderConfig, d.get("proprio_encoder", {}))
+        ),
         merger=TokenMergerConfig(**_filter_known_fields(TokenMergerConfig, d.get("merger", {}))),
         backbone=BackboneConfig(**_filter_known_fields(BackboneConfig, d.get("backbone", {}))),
         action_head=MLPHeadConfig(**_filter_known_fields(MLPHeadConfig, d.get("action_head", {}))),
         freeze=FreezeConfig(**_filter_known_fields(FreezeConfig, d.get("freeze", {}))),
-        action_space=ActionSpaceSpec(**_filter_known_fields(ActionSpaceSpec, d.get("action_space", {"names": [], "units": [], "limits": None}))),
+        action_space=ActionSpaceSpec(
+            **_filter_known_fields(ActionSpaceSpec, d.get("action_space", {"names": [], "units": [], "limits": None}))
+        ),
         proprio=ProprioSpec(**_filter_known_fields(ProprioSpec, d.get("proprio", {"names": [], "units": []}))),
         dt_hz=d.get("dt_hz", 10.0),
         config_version=d.get("config_version", "1.0"),

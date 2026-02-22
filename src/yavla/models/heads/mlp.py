@@ -5,8 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-import torch
-import torch.nn.functional as F
+import torch.nn.functional as F  # noqa: N812
 from torch import Tensor, nn
 
 from yavla.models.protocols import ActionHeadBase, ActionHeadRequirements, IntegrationMode
@@ -45,7 +44,8 @@ class ResidualMLP(nn.Module):
         x = F.relu(self.input_linear(self.input_norm(x)))
         for block in self.blocks:
             x = block(x)
-        return self.output_linear(self.output_norm(x))
+        result: Tensor = self.output_linear(self.output_norm(x))
+        return result
 
 
 class _ResBlock(nn.Module):
@@ -84,7 +84,7 @@ class MLPRegressionHead(ActionHeadBase):
         if readout.shape[1] == 0:
             raise ValueError("readout_states has 0 tokens, cannot mean-pool")
         pooled = readout.mean(dim=1)  # [B, N_readout, D] → [B, D]
-        flat = self.net(pooled)  # [B, chunk_len * action_dim]
+        flat: Tensor = self.net(pooled)  # [B, chunk_len * action_dim]
         return flat.view(flat.shape[0], self._config.chunk_len, self._config.action_dim)
 
     def predict(self, backbone_output: BackboneOutput) -> ActionPrediction:

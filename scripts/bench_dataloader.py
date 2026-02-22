@@ -8,7 +8,7 @@ import os
 import platform
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import numpy as np
@@ -81,6 +81,7 @@ def _wrap_transforms(transform: Any) -> list[_TimingWrapper]:
 def _measure_throughput(loader: DataLoader[Any], *, warmup: int, batch_size: int) -> dict[str, float]:
     """Iterate loader, skip warmup, return samples/sec median + IQR."""
     batch_times: list[float] = []
+    t0 = time.perf_counter()
     for i, _ in enumerate(loader):
         if i < warmup:
             continue
@@ -138,7 +139,7 @@ def _run_synthetic(args: argparse.Namespace) -> dict[str, Any]:
         "throughput": throughput,
         "per_transform_latency_ns": _transform_stats(wrappers),
         "hardware": _hardware_info(),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -186,7 +187,7 @@ def _run_real(args: argparse.Namespace) -> list[dict[str, Any]]:
                 "throughput": throughput,
                 "per_transform_latency_ns": _transform_stats(wrappers),
                 "hardware": _hardware_info(),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             }
         )
     return results

@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import torch
-from torch import Tensor, nn
-
 from yavla.models.protocols import ActionDecoderBase
 from yavla.models.registry import Registry
 from yavla.models.types import ActionChunk, ActionPrediction, ActionSpaceSpec
@@ -30,7 +27,7 @@ class SimpleActionDecoder(ActionDecoderBase):
         if self._action_space_spec.limits is not None:
             # Note: We intentionally DO NOT clamp `actions` to [-1, 1] here to avoid
             # GPU sync points / graph overhead during latency-critical inference.
-            # We assume the action head provides natively bounded predictions, and rely 
+            # We assume the action head provides natively bounded predictions, and rely
             # on the environment or dataset layer to handle physical clipping if needed.
             limits = self._action_space_spec.limits.to(actions.device)
             lo, hi = limits[:, 0], limits[:, 1]

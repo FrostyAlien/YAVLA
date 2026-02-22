@@ -8,17 +8,17 @@ ConfigT = TypeVar("ConfigT")
 ModuleT = TypeVar("ModuleT")
 
 
-class Registry(Generic[ConfigT, ModuleT]):
+class Registry(Generic[ConfigT, ModuleT]):  # noqa: UP046
     def __init__(self, name: str) -> None:
         self._name = name
-        self._entries: dict[str, tuple[type[ConfigT], type[ModuleT]]] = {}
+        self._entries: dict[str, tuple[type[ConfigT] | None, type[ModuleT]]] = {}
 
     def register(self, name: str, config_cls: type[ConfigT] | None = None) -> Any:
         def decorator(module_cls: type[ModuleT]) -> type[ModuleT]:
             if name in self._entries:
                 raise ValueError(f"Duplicate registration in '{self._name}': '{name}' already registered")
             cfg = config_cls if config_cls is not None else getattr(module_cls, "Config", None)
-            self._entries[name] = (cfg, module_cls)  # type: ignore[arg-type]
+            self._entries[name] = (cfg, module_cls)
             return module_cls
 
         return decorator
@@ -43,4 +43,4 @@ class Registry(Generic[ConfigT, ModuleT]):
         config_cls, _ = self._entries[name]
         if config_cls is None:
             raise ValueError(f"No config class registered for '{name}'")
-        return config_cls()  # type: ignore[call-arg]
+        return config_cls()

@@ -5,8 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-import torch
-from torch import Tensor, nn
+from torch import Tensor
 
 from yavla.models.protocols import VisionEncoderBase
 from yavla.models.registry import Registry
@@ -27,13 +26,13 @@ class PaliGemmaVisionEncoder(VisionEncoderBase):
 
     @property
     def output_dim(self) -> int:
-        return self._base_model.config.text_config.hidden_size  # type: ignore[no-any-return]
+        return int(self._base_model.config.text_config.hidden_size)
 
     @property
     def num_patches(self) -> int:
-        img_size = self._base_model.config.vision_config.image_size
-        patch_size = self._base_model.config.vision_config.patch_size
-        return (img_size // patch_size) ** 2  # type: ignore[no-any-return]
+        img_size: int = self._base_model.config.vision_config.image_size
+        patch_size: int = self._base_model.config.vision_config.patch_size
+        return (img_size // patch_size) ** 2
 
     def encode_images(self, images: dict[str, Tensor]) -> Tensor:
         if len(images) == 0:
@@ -43,7 +42,8 @@ class PaliGemmaVisionEncoder(VisionEncoderBase):
                 f"MVP encoder supports single-camera only, got {len(images)} cameras: {list(images.keys())}"
             )
         pixel_values = next(iter(images.values()))
-        return self._base_model.get_image_features(pixel_values)  # [B, num_patches, D]
+        result: Tensor = self._base_model.get_image_features(pixel_values)
+        return result
 
 
 vision_registry.register("paligemma_siglip", VisionEncoderConfig)(PaliGemmaVisionEncoder)

@@ -144,11 +144,11 @@ def add_embeddings_to_dataset(
     """
     import fiftyone.brain as fob  # type: ignore[import-untyped]
 
-    if hasattr(embeddings, "cpu"):
+    if hasattr(embeddings, "cpu") and callable(embeddings.cpu):
         embeddings = embeddings.cpu().numpy()
     embeddings = np.asarray(embeddings)
 
-    if len(embeddings) != len(dataset):
+    if len(embeddings) != int(len(dataset)):
         raise ValueError(f"Embedding count {len(embeddings)} != dataset sample count {len(dataset)}")
 
     cache_path: Path | None = None
