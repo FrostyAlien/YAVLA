@@ -11,3 +11,28 @@ dataset:
   normalize: true
   normalize_mode: "z-score"
   image_transforms: []
+
+optimizer:
+  name: "AdamW"
+  lr: 1e-4
+  weight_decay: 0.01
+  betas: [0.9, 0.999]
+  eps: 1e-8
+  grad_clip_norm: 1.0
+  backbone_lr_scale: 0.1
+
+scheduler:
+  name: "cosine"
+  warmup_steps: 1000
+  min_lr_ratio: 0.1
+
+precision: "bf16"
+num_steps: 100000
+log_freq: 100
+save_freq: 5000
+output_dir: "outputs/train"
+resume: false
+gradient_checkpointing: true
+use_policy_preset: true
+wandb: false
+gradient_accumulation_steps: 1

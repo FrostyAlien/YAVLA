@@ -3,23 +3,14 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 from typing import Any
 
 from torch.utils.data import DataLoader
 
-from yavla.data.factory import DataConfig, create_dataloader, dataclass_to_dict, set_dataloader_epoch
-from yavla.visualization.config import VizConfig
+from yavla.data.factory import create_dataloader, dataclass_to_dict, set_dataloader_epoch
+from yavla.training.config import TrainingConfig
 
 LOGGER = logging.getLogger(__name__)
-
-
-@dataclass(slots=True)
-class TrainingConfig:
-    """Minimal training config containing dataset settings."""
-
-    dataset: DataConfig = field(default_factory=lambda: DataConfig(repo_id="lerobot/aloha_sim"))
-    viz: VizConfig = field(default_factory=VizConfig)
 
 
 def create_training_dataloader(config: TrainingConfig) -> DataLoader[Any]:

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import enum
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-import torch
 from torch import Tensor, nn
+
+if TYPE_CHECKING:
+    from yavla.training.config import OptimizerConfig
 
 from yavla.models.types import (
     ActionChunk,
@@ -232,6 +234,10 @@ class PolicyBase(nn.Module, ABC):
     def get_optim_params(self) -> dict[str, Any]:
         """Parameter groups for the optimizer. Default: all params, single group."""
         return {"params": self.parameters()}
+
+    def get_optimizer_preset(self) -> OptimizerConfig | None:
+        """Return policy-specific optimizer defaults, or None to use config as-is."""
+        return None
 
 
 # ---------------------------------------------------------------------------
