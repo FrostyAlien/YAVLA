@@ -1,4 +1,29 @@
-"""Training loop and Trainer class (Accelerate-first)."""
+"""Training loop and Trainer class (Accelerate-first).
+
+Provides ``train_step`` (a single forward/backward/clip/step) and ``Trainer``
+(the full training loop with checkpoint save/resume and WandB logging).
+
+All distributed-training concerns — AMP, gradient clipping, gradient
+accumulation, and checkpointing — are delegated to HuggingFace Accelerate.
+The loop counts *optimizer steps* (not micro-batches); logging and checkpoint
+saves are gated on ``accelerator.sync_gradients`` so they only fire after a
+real parameter update.
+
+Gradient accumulation flow::
+
+    while completed_steps < num_steps:
+        batch = next(data_iter)
+        with accelerator.accumulate(policy):   # no-ops opt.step on non-sync
+            train_step(policy, batch, ...)
+        scheduler.step()                       # AcceleratedScheduler gates internally
+        if not sync_gradients: continue
+        completed_steps += 1                   # ← optimizer step boundary
+        log / checkpoint here
+
+On resume, ``skip_first_batches`` fast-forwards the dataloader by
+``start_step * gradient_accumulation_steps`` micro-batches so the model
+does not replay data it already trained on.
+"""
 
 from __future__ import annotations
 
