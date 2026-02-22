@@ -15,16 +15,16 @@
 
 ## Phase 3: Training Loop (Accelerate-first)
 
-- [ ] 3.1 Implement `train_step(policy, batch, accelerator, optimizer, config) -> tuple[LossDict, float]` in `src/yavla/training/trainer.py` — uses `accelerator.backward()` and `accelerator.clip_grad_norm_()` (no manual GradScaler/autocast)
-- [ ] 3.2 Implement `Trainer.__init__`: create `Accelerator(mixed_precision=config.precision)`, call `make_optimizer_and_scheduler`, call `accelerator.prepare(policy, optimizer, dataloader, scheduler)`, register scheduler for checkpointing
-- [ ] 3.3 Implement `Trainer.run()` step loop with scheduler step and periodic checkpoint save via `accelerator.save_state()`
-- [ ] 3.4 Wire gradient checkpointing: call `policy.backbone.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})` when `config.gradient_checkpointing=True`
+- [x] 3.1 Implement `train_step(policy, batch, accelerator, optimizer, config) -> tuple[LossDict, float]` in `src/yavla/training/trainer.py` — uses `accelerator.backward()` and `accelerator.clip_grad_norm_()` (no manual GradScaler/autocast)
+- [x] 3.2 Implement `Trainer.__init__`: create `Accelerator(mixed_precision=config.precision)`, call `make_optimizer_and_scheduler`, call `accelerator.prepare(policy, optimizer, dataloader, scheduler)`, register scheduler for checkpointing
+- [x] 3.3 Implement `Trainer.run()` step loop with scheduler step and periodic checkpoint save via `accelerator.save_state()`
+- [x] 3.4 Wire gradient checkpointing: call `policy.backbone.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})` when `config.gradient_checkpointing=True`
 
 ## Phase 4: Checkpoint Save & Resume (via Accelerate)
 
-- [ ] 4.1 Implement `Trainer.save_checkpoint(step)`: call `accelerator.save_state(f"{output_dir}/checkpoint-{step}")`
-- [ ] 4.2 Implement `Trainer._load_latest_checkpoint()`: scan for highest-step `checkpoint-*` dir, call `accelerator.load_state(path)`, return step
-- [ ] 4.3 Wire resume into `Trainer.run()`: call `_load_latest_checkpoint()` when `config.resume=True`
+- [x] 4.1 Implement `Trainer.save_checkpoint(step)`: call `accelerator.save_state(f"{output_dir}/checkpoint-{step}")`
+- [x] 4.2 Implement `Trainer._load_latest_checkpoint()`: scan for highest-step `checkpoint-*` dir, call `accelerator.load_state(path)`, return step
+- [x] 4.3 Wire resume into `Trainer.run()`: call `_load_latest_checkpoint()` when `config.resume=True`
 
 ## Phase 5: Entry Point & Logging
 
