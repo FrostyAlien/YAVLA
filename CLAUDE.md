@@ -95,7 +95,7 @@ Subclasses can override pipeline steps for different VLA paradigms: For example,
 
 ## Available MCP Servers
 
-- **codex** — GPT-5.3-codex model for code generation/analysis and peer review
+- **codex** — GPT-5.3-codex model for code generation/analysis and peer review, have build-in grok-search MCP support
 - **grok-search** — web search + page scraping (see Grok Search policy below)
 - **pdf-reader** — PDF text/table extraction (useful for reading papers)
 

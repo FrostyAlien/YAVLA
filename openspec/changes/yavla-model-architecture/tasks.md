@@ -1,8 +1,14 @@
 ## Phase 1: MVP (separate change: mvp-mlp-policy)
 
-- [ ] 1.1 See `openspec/changes/mvp-mlp-policy/tasks.md` for full breakdown
-- [ ] 1.2 Validate end-to-end forward pass: images + proprio + language → action chunk
-- [ ] 1.3 Validate save_pretrained / from_pretrained round-trip
+- [x] 1.1 See `openspec/changes/mvp-mlp-policy/tasks.md` for full breakdown
+- [x] 1.2 Validate end-to-end forward pass: images + proprio + language → action chunk
+- [x] 1.3 Validate save_pretrained / from_pretrained round-trip
+
+## Phase 1.5: Training Scripts (separate change: training-scripts)
+
+- [ ] 1.5.1 See `openspec/changes/training-scripts/tasks.md` for full breakdown
+- [ ] 1.5.2 Validate `train_step()` end-to-end: `TrainingBatch` → `LossDict` → optimizer step
+- [ ] 1.5.3 Validate checkpoint save/resume round-trip (model + optimizer + scheduler + step)
 
 ## Phase 2: Flow Matching Head
 

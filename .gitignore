@@ -208,3 +208,5 @@ __marimo__/
 opencode.json
 pyrightconfig.json
 .sisyphus
+
+outputs/
