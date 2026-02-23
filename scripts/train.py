@@ -101,7 +101,9 @@ def main() -> None:
     policy = build_policy(cfg.policy)
 
     LOGGER.info("Creating dataloader...")
-    dataloader = create_training_dataloader(cfg.training)
+    dataloader = create_training_dataloader(
+        cfg.training, dt_hz=cfg.policy.dt_hz, chunk_len=cfg.policy.action_head.chunk_len
+    )
 
     trainer = Trainer(policy, cfg.training, dataloader)
     LOGGER.info("Starting training for %d steps", cfg.training.num_steps)
