@@ -217,12 +217,30 @@ class VLAPolicy(PolicyBase):
                 meta = json.load(f)
             has_lora = meta.get("has_lora", False)
 
-        policy = build_policy(config)
+        # build_policy() dispatches via vlm_registry using config.backbone.type.
+        # Pre-refactor checkpoints missing the "backbone" key entirely (or just the
+        # "type" sub-key) default to "paligemma" through BackboneConfig's field default.
+        try:
+            policy = build_policy(config)
+        except KeyError as e:
+            raise ValueError(
+                f"Cannot load checkpoint: unsupported backbone type "
+                f"'{config.backbone.type}' in {path / 'config.json'}"
+            ) from e
 
         from safetensors.torch import load_file
 
         if has_lora and (path / "adapter").exists():
-            # Load LoRA adapter via peft
+            # NOTE: LoRA loading accesses backbone.model / backbone.base_model directly,
+            # which are PaliGemma-specific properties (not on BackboneBase). Loading a
+            # LoRA checkpoint with a different backbone type will raise AttributeError.
+            # Generalizing this is deferred to per-backbone save/load methods.
+            if not hasattr(policy.backbone, "base_model"):
+                raise NotImplementedError(
+                    f"LoRA checkpoint loading is not supported for backbone type "
+                    f"'{config.backbone.type}' — only PaliGemma backbones currently "
+                    f"support LoRA adapter loading."
+                )
             import peft
 
             # Replace backbone's model with adapter loaded onto base model
