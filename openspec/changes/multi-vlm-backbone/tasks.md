@@ -35,8 +35,8 @@
 
 ## 6. Training Integration Test
 
-- [ ] 6.1 Create `tests/integration/test_training_loop.py` with `@pytest.mark.integration`
-- [ ] 6.2 Implement synthetic `TrainingBatch` factory (random images, proprio, language, actions matching policy config shapes)
-- [ ] 6.3 Implement test: `build_policy()` → `policy.forward(batch)` → assert finite loss
-- [ ] 6.4 Implement test: forward → backward → optimizer step → assert parameters changed
-- [ ] 6.5 Verify test is excluded from default `pixi run -e dev test` and runs with `-m ""`
+- [x] 6.1 Create `tests/integration/test_training_loop.py` with `@pytest.mark.integration`
+- [x] 6.2 Implement synthetic `TrainingBatch` factory (random images, proprio, language, actions matching policy config shapes)
+- [x] 6.3 Implement test: `build_policy()` → `policy.forward(batch)` → assert finite loss
+- [x] 6.4 Implement test: forward → backward → optimizer step → assert parameters changed
+- [x] 6.5 Verify test is excluded from default `pixi run -e dev test` and runs with `-m ""`
