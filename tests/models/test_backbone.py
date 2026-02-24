@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import torch
 import pytest
 
-from yavla.models.backbone import BackboneConfig
+from yavla.models.config import BackboneConfig
 from yavla.models.backbones.paligemma import PaliGemmaBackbone
 from yavla.models.protocols import BackboneProto, IntegrationMode
 

@@ -252,61 +252,16 @@ class VLAPolicy(PolicyBase):
 
 
 def build_policy(config: PolicyConfig) -> VLAPolicy:
-    from transformers import AutoModelForVision2Seq, AutoProcessor
-
-    from yavla.models.backbones.paligemma import PaliGemmaBackbone, PaliGemmaVisionEncoder
     from yavla.models.decoder import SimpleActionDecoder
     from yavla.models.encoders.proprio import ProprioEncoder, ProprioEncoderConfig
     from yavla.models.heads.mlp import MLPRegressionHead
     from yavla.models.merger import ConcatMerger
+    from yavla.models.vlm_registry import vlm_registry
 
-    # 1. Load PaliGemma
-    base_model = AutoModelForVision2Seq.from_pretrained(  # type: ignore[no-untyped-call]
-        config.backbone.vlm_name,
-        torch_dtype=torch.float32,
+    # Build vision encoder + backbone via registry (type-driven dispatch)
+    vision_encoder, backbone = vlm_registry.build(
+        config.backbone, config.freeze, config.merger.num_readout_tokens
     )
-    tokenizer = AutoProcessor.from_pretrained(config.backbone.vlm_name).tokenizer  # type: ignore[no-untyped-call]
-
-    # 2. Store unwrapped ref
-    unwrapped = base_model
-
-    # 3. Freeze modules
-    for name in config.freeze.freeze_modules:
-        for param_name, param in base_model.named_parameters():
-            if param_name.startswith(name):
-                param.requires_grad_(False)
-
-    # 4. Apply LoRA if configured
-    peft_model = None
-    if config.freeze.lora_target_modules:
-        import peft
-
-        lora_config = peft.LoraConfig(
-            target_modules=config.freeze.lora_target_modules,
-            r=config.freeze.lora_r,
-            lora_alpha=config.freeze.lora_alpha,
-            lora_dropout=config.freeze.lora_dropout,
-        )
-        peft_model = peft.get_peft_model(base_model, lora_config)
-        # 5. Enable input require grads for gradient flow
-        peft_model.enable_input_require_grads()  # pyright: ignore[reportCallIssue]
-
-    # 6-7. Gradient checkpointing
-    if config.backbone.gradient_checkpointing:
-        unwrapped.config.use_cache = False
-        unwrapped.gradient_checkpointing_enable()
-
-    # Build backbone
-    model_for_forward = peft_model if peft_model is not None else base_model
-    backbone = PaliGemmaBackbone(
-        model=model_for_forward,
-        tokenizer_instance=tokenizer,
-        num_readout_tokens=config.merger.num_readout_tokens,
-    )
-    backbone.base_model = unwrapped
-
-    # Build vision encoder with unwrapped base_model ref
-    vision_encoder = PaliGemmaVisionEncoder(base_model=unwrapped, config=config.vision_encoder)
 
     # Build proprio encoder
     proprio_encoder = ProprioEncoder(
@@ -323,7 +278,7 @@ def build_policy(config: PolicyConfig) -> VLAPolicy:
     # Build action head
     action_head = MLPRegressionHead(config=config.action_head, backbone_dim=backbone.hidden_dim)
 
-    # 10. Validate integration
+    # Validate integration
     validate_integration(backbone, action_head)
 
     # Build decoder
@@ -377,7 +332,7 @@ def _dict_to_config(d: dict[str, Any]) -> PolicyConfig:
     Unknown keys in sub-configs are silently dropped with a warning,
     enabling forward-compatibility when loading checkpoints from newer versions.
     """
-    from yavla.models.backbone import BackboneConfig
+    from yavla.models.config import BackboneConfig
     from yavla.models.encoders.proprio import ProprioEncoderConfig
     from yavla.models.encoders.vision import VisionEncoderConfig
     from yavla.models.heads.mlp import MLPHeadConfig

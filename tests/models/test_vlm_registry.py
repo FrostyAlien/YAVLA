@@ -6,14 +6,14 @@ import pytest
 import torch
 from torch import Tensor
 
-from yavla.models.backbone import BackboneConfig
+from yavla.models.config import BackboneConfig
 from yavla.models.protocols import (
     BackboneBase,
     BackboneCapabilities,
     IntegrationMode,
     VisionEncoderBase,
 )
-from yavla.models.types import BackboneOutput
+from yavla.models.types import BackboneOutput, FreezeConfig
 from yavla.models.vlm_registry import VLMRegistry
 
 
@@ -48,7 +48,9 @@ class _StubBackbone(BackboneBase):
         return BackboneOutput(readout_states=torch.zeros(1, 1, 16), token_states=None, attention_mask=attention_mask)
 
 
-def _build_stub(config: BackboneConfig) -> tuple[VisionEncoderBase, BackboneBase]:
+def _build_stub(
+    config: BackboneConfig, freeze: FreezeConfig, num_readout_tokens: int
+) -> tuple[VisionEncoderBase, BackboneBase]:
     return _StubVisionEncoder(), _StubBackbone()
 
 
@@ -56,14 +58,14 @@ class TestVLMRegistry:
     def test_register_and_build(self) -> None:
         reg = VLMRegistry()
         reg.register("stub")(_build_stub)
-        vision, backbone = reg.build(BackboneConfig(type="stub"))
+        vision, backbone = reg.build(BackboneConfig(type="stub"), FreezeConfig(), 64)
         assert isinstance(vision, VisionEncoderBase)
         assert isinstance(backbone, BackboneBase)
 
     def test_unknown_type_raises(self) -> None:
         reg = VLMRegistry()
         with pytest.raises(KeyError, match="nonexistent"):
-            reg.build(BackboneConfig(type="nonexistent"))
+            reg.build(BackboneConfig(type="nonexistent"), FreezeConfig(), 64)
 
     def test_list(self) -> None:
         reg = VLMRegistry()

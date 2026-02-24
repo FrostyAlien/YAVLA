@@ -8,7 +8,7 @@ import torch
 from torch import Tensor
 
 from yavla.models.protocols import BackboneBase, BackboneCapabilities, IntegrationMode, VisionEncoderBase
-from yavla.models.types import BackboneOutput
+from yavla.models.types import BackboneOutput, FreezeConfig
 from yavla.models.vlm_registry import vlm_registry
 
 
@@ -106,12 +106,12 @@ class PaliGemmaBackbone(BackboneBase):
 
 
 @vlm_registry.register("paligemma")
-def build_paligemma_vlm(config: Any) -> tuple[VisionEncoderBase, BackboneBase]:
+def build_paligemma_vlm(
+    config: Any, freeze: FreezeConfig, num_readout_tokens: int
+) -> tuple[VisionEncoderBase, BackboneBase]:
     """Build PaliGemma vision encoder + backbone pair.
 
     Handles HF model loading, freezing, LoRA wrapping, and gradient checkpointing.
-    Requires ``freeze`` config from the parent ``PolicyConfig`` passed via
-    ``config._freeze`` (set by ``build_policy()`` before calling the registry).
     """
     from transformers import AutoModelForVision2Seq, AutoProcessor
 
@@ -123,17 +123,15 @@ def build_paligemma_vlm(config: Any) -> tuple[VisionEncoderBase, BackboneBase]:
 
     unwrapped = base_model
 
-    # Freeze modules (requires freeze config injected by build_policy)
-    freeze = getattr(config, "_freeze", None)
-    if freeze is not None:
-        for name in freeze.freeze_modules:
-            for param_name, param in base_model.named_parameters():
-                if param_name.startswith(name):
-                    param.requires_grad_(False)
+    # Freeze modules
+    for name in freeze.freeze_modules:
+        for param_name, param in base_model.named_parameters():
+            if param_name.startswith(name):
+                param.requires_grad_(False)
 
     # Apply LoRA if configured
     peft_model = None
-    if freeze is not None and freeze.lora_target_modules:
+    if freeze.lora_target_modules:
         import peft
 
         lora_config = peft.LoraConfig(
@@ -151,12 +149,11 @@ def build_paligemma_vlm(config: Any) -> tuple[VisionEncoderBase, BackboneBase]:
         unwrapped.gradient_checkpointing_enable()
 
     model_for_forward = peft_model if peft_model is not None else base_model
-    num_readout = getattr(config, "_num_readout_tokens", 64)
 
     backbone = PaliGemmaBackbone(
         model=model_for_forward,
         tokenizer_instance=tokenizer,
-        num_readout_tokens=num_readout,
+        num_readout_tokens=num_readout_tokens,
     )
     backbone.base_model = unwrapped
 

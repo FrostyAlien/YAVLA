@@ -4,12 +4,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from yavla.models.backbone import BackboneConfig
 from yavla.models.encoders.proprio import ProprioEncoderConfig
 from yavla.models.encoders.vision import VisionEncoderConfig
 from yavla.models.heads.mlp import MLPHeadConfig
 from yavla.models.merger import TokenMergerConfig
 from yavla.models.types import ActionSpaceSpec, FreezeConfig, ProprioSpec
+
+
+@dataclass
+class BackboneConfig:
+    type: str = "paligemma"
+    vlm_name: str = "google/paligemma-3b-pt-224"
+    gradient_checkpointing: bool = True
 
 
 @dataclass

@@ -6,8 +6,9 @@ from collections.abc import Callable
 from typing import Any
 
 from yavla.models.protocols import BackboneBase, VisionEncoderBase
+from yavla.models.types import FreezeConfig
 
-VLMBuilder = Callable[[Any], tuple[VisionEncoderBase, BackboneBase]]
+VLMBuilder = Callable[[Any, FreezeConfig, int], tuple[VisionEncoderBase, BackboneBase]]
 
 
 class VLMRegistry:
@@ -23,11 +24,13 @@ class VLMRegistry:
 
         return decorator
 
-    def build(self, config: Any) -> tuple[VisionEncoderBase, BackboneBase]:
+    def build(
+        self, config: Any, freeze: FreezeConfig, num_readout_tokens: int
+    ) -> tuple[VisionEncoderBase, BackboneBase]:
         if config.type not in self._builders:
             available = ", ".join(sorted(self._builders.keys()))
             raise KeyError(f"Unknown VLM type '{config.type}'. Available: [{available}]")
-        return self._builders[config.type](config)
+        return self._builders[config.type](config, freeze, num_readout_tokens)
 
     def list(self) -> list[str]:
         return list(self._builders.keys())

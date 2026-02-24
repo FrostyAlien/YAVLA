@@ -2,7 +2,7 @@
 
 # Registry registrations (side-effect imports)
 import yavla.models.backbones  # noqa: F401  # triggers vlm_registry registration
-from yavla.models.backbone import backbone_registry  # noqa: F401
+from yavla.models.config import BackboneConfig as BackboneConfig
 from yavla.models.config import PolicyConfig as PolicyConfig
 from yavla.models.decoder import decoder_registry  # noqa: F401
 from yavla.models.encoders import proprio_registry as proprio_registry
