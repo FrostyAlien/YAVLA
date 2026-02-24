@@ -211,6 +211,65 @@ class TestVLAPolicy:
         assert VLAPolicy.name == "vla"
         assert VLAPolicy.config_class is PolicyConfig
 
+    def test_encode_observations_delegates_to_embed_language(self) -> None:
+        """encode_observations() must call backbone.embed_language(), not access tokenizer."""
+        policy = self._make_policy()
+        obs = self._make_obs()
+        policy.encode_observations(obs)
+        policy.backbone.embed_language.assert_called_once()
+        args = policy.backbone.embed_language.call_args[0][0]
+        assert isinstance(args, list)
+        assert len(args) == self.B
+
+    def test_encode_observations_broadcasts_str_language(self) -> None:
+        """A single string language instruction is broadcast to batch size."""
+        policy = self._make_policy()
+        obs = ObservationBatch(
+            images={"cam": torch.randn(self.B, 3, 224, 224)},
+            proprio=torch.randn(self.B, 7),
+            language="pick up the cup",
+        )
+        policy.encode_observations(obs)
+        args = policy.backbone.embed_language.call_args[0][0]
+        assert args == ["pick up the cup"] * self.B
+
+    def test_encode_observations_handles_none_language(self) -> None:
+        """language=None is normalized to [''] * batch_size."""
+        policy = self._make_policy()
+        obs = ObservationBatch(
+            images={"cam": torch.randn(self.B, 3, 224, 224)},
+            proprio=torch.randn(self.B, 7),
+            language=None,
+        )
+        policy.encode_observations(obs)
+        args = policy.backbone.embed_language.call_args[0][0]
+        assert args == [""] * self.B
+
+    def test_encode_observations_passes_list_through(self) -> None:
+        """A pre-formed list[str] is forwarded to embed_language unchanged."""
+        policy = self._make_policy()
+        langs = ["pick up the cup", "open the drawer"]
+        obs = ObservationBatch(
+            images={"cam": torch.randn(self.B, 3, 224, 224)},
+            proprio=torch.randn(self.B, 7),
+            language=langs,
+        )
+        policy.encode_observations(obs)
+        args = policy.backbone.embed_language.call_args[0][0]
+        assert args == langs
+
+    def test_encode_observations_empty_string_language(self) -> None:
+        """language='' (falsy string) is broadcast to [''] * batch_size."""
+        policy = self._make_policy()
+        obs = ObservationBatch(
+            images={"cam": torch.randn(self.B, 3, 224, 224)},
+            proprio=torch.randn(self.B, 7),
+            language="",
+        )
+        policy.encode_observations(obs)
+        args = policy.backbone.embed_language.call_args[0][0]
+        assert args == [""] * self.B
+
 
 class TestPolicyBaseEnforcement:
     """Test __init_subclass__ contract enforcement."""

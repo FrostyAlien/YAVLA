@@ -82,3 +82,27 @@ class TestPaliGemmaBackbone:
         new_model = MagicMock()
         bb.base_model = new_model
         assert bb.base_model is new_model
+
+    def test_embed_language_returns_embeddings_and_mask(self) -> None:
+        model, tok = _make_mock_paligemma()
+        D = 2048
+        # Mock tokenizer output
+        tok.return_value = {
+            "input_ids": torch.tensor([[1, 2, 3], [1, 2, 0]]),
+            "attention_mask": torch.tensor([[1, 1, 1], [1, 1, 0]]),
+        }
+        # Mock embedding layer
+        embed_layer = MagicMock(return_value=torch.randn(2, 3, D))
+        model.get_input_embeddings = MagicMock(return_value=embed_layer)
+
+        bb = PaliGemmaBackbone(model, tok, num_readout_tokens=64)
+        # The mock model isn't a real nn.Module, so nn.Module.parameters() is empty.
+        # Register a dummy parameter so embed_language's next(self.parameters()).device works.
+        bb.register_parameter("_dummy", torch.nn.Parameter(torch.empty(1)))
+        embeds, mask = bb.embed_language(["hello world", "hi"])
+
+        tok.assert_called_once()
+        assert embeds.shape == (2, 3, D)
+        assert mask.shape == (2, 3)
+        assert mask[0].tolist() == [1, 1, 1]
+        assert mask[1].tolist() == [1, 1, 0]

@@ -24,14 +24,14 @@
 - [x] 4.1 Refactor `build_policy()` to call `vlm_registry.build(config.backbone)` for vision encoder + backbone, then build remaining modules generically
 - [x] 4.2 Simplify `VLAPolicy.encode_observations()` to call `self.backbone.embed_language()` instead of reaching into tokenizer/embeddings
 - [x] 4.3 Update `from_pretrained()` to read `config.backbone.type` for dispatch, defaulting to `"paligemma"` for pre-refactor checkpoints
-- [ ] 4.4 Run full unit test suite — verify no regressions
+- [x] 4.4 Run full unit test suite — verify no regressions
 
 ## 5. Update Existing Tests
 
-- [ ] 5.1 Update `tests/models/test_policy.py` for refactored `build_policy()` and `encode_observations()`
-- [ ] 5.2 Update `tests/models/test_backbone.py` for renamed `PaliGemmaBackbone` and new `embed_language()` method
-- [ ] 5.3 Verify `tests/models/test_policy_serialization.py` passes (serialization compat)
-- [ ] 5.4 Run lint (`pixi run -e dev lint`) and typecheck (`pixi run -e dev typecheck`)
+- [x] 5.1 Update `tests/models/test_policy.py` for refactored `build_policy()` and `encode_observations()`
+- [x] 5.2 Update `tests/models/test_backbone.py` for renamed `PaliGemmaBackbone` and new `embed_language()` method
+- [x] 5.3 Verify `tests/models/test_policy_serialization.py` passes (serialization compat)
+- [x] 5.4 Run lint (`pixi run -e dev lint`) and typecheck (`pixi run -e dev typecheck`)
 
 ## 6. Training Integration Test
 
