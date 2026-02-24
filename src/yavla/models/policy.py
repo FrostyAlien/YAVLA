@@ -254,10 +254,9 @@ class VLAPolicy(PolicyBase):
 def build_policy(config: PolicyConfig) -> VLAPolicy:
     from transformers import AutoModelForVision2Seq, AutoProcessor
 
-    from yavla.models.backbone import VLMBackbone
+    from yavla.models.backbones.paligemma import PaliGemmaBackbone, PaliGemmaVisionEncoder
     from yavla.models.decoder import SimpleActionDecoder
     from yavla.models.encoders.proprio import ProprioEncoder, ProprioEncoderConfig
-    from yavla.models.encoders.vision import PaliGemmaVisionEncoder
     from yavla.models.heads.mlp import MLPRegressionHead
     from yavla.models.merger import ConcatMerger
 
@@ -299,7 +298,7 @@ def build_policy(config: PolicyConfig) -> VLAPolicy:
 
     # Build backbone
     model_for_forward = peft_model if peft_model is not None else base_model
-    backbone = VLMBackbone(
+    backbone = PaliGemmaBackbone(
         model=model_for_forward,
         tokenizer_instance=tokenizer,
         num_readout_tokens=config.merger.num_readout_tokens,

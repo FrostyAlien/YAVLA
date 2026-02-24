@@ -85,7 +85,7 @@ class TestPolicyConfig:
         cfg = PolicyConfig()
         assert cfg.config_version == "1.0"
         assert cfg.dt_hz == 10.0
-        assert cfg.backbone.type == "vlm"
+        assert cfg.backbone.type == "paligemma"
         assert cfg.action_head.type == "mlp"
         assert cfg.merger.type == "concat"
         assert cfg.vision_encoder.type == "paligemma_siglip"
@@ -105,7 +105,7 @@ class TestVLAPolicy:
 
     def _make_policy(self) -> "VLAPolicy":
         from yavla.models.policy import VLAPolicy
-        from yavla.models.encoders.vision import PaliGemmaVisionEncoder, VisionEncoderConfig
+        from yavla.models.backbones.paligemma import PaliGemmaVisionEncoder
         from yavla.models.encoders.proprio import ProprioEncoder, ProprioEncoderConfig
         from yavla.models.merger import ConcatMerger, TokenMergerConfig
         from yavla.models.heads.mlp import MLPRegressionHead, MLPHeadConfig

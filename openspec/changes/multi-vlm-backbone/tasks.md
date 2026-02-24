@@ -12,12 +12,12 @@
 
 ## 3. Extract PaliGemma into Dedicated Module
 
-- [ ] 3.1 Create `src/yavla/models/backbones/` package with `__init__.py`
-- [ ] 3.2 Create `src/yavla/models/backbones/paligemma.py` — move `VLMBackbone` (renamed `PaliGemmaBackbone`) and `PaliGemmaVisionEncoder` from current locations
-- [ ] 3.3 Implement `embed_language()` on `PaliGemmaBackbone` (extract logic from `VLAPolicy.encode_observations()` lines 80-87)
-- [ ] 3.4 Create `build_paligemma_vlm(config: BackboneConfig) -> tuple[VisionEncoderBase, BackboneBase]` builder function (extract from `build_policy()` lines 264-310)
-- [ ] 3.5 Register builder with `vlm_registry.register("paligemma")`
-- [ ] 3.6 Keep backward-compat imports in old locations (`backbone.py`, `encoders/vision.py`) if needed, or update all internal references
+- [x] 3.1 Create `src/yavla/models/backbones/` package with `__init__.py`
+- [x] 3.2 Create `src/yavla/models/backbones/paligemma.py` — move `VLMBackbone` (renamed `PaliGemmaBackbone`) and `PaliGemmaVisionEncoder` from current locations
+- [x] 3.3 Implement `embed_language()` on `PaliGemmaBackbone` (extract logic from `VLAPolicy.encode_observations()` lines 80-87)
+- [x] 3.4 Create `build_paligemma_vlm(config: BackboneConfig) -> tuple[VisionEncoderBase, BackboneBase]` builder function (extract from `build_policy()` lines 264-310)
+- [x] 3.5 Register builder with `vlm_registry.register("paligemma")`
+- [x] 3.6 Keep backward-compat imports in old locations (`backbone.py`, `encoders/vision.py`) if needed, or update all internal references
 
 ## 4. Refactor build_policy and VLAPolicy
 

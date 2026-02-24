@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
-from yavla.models.backbone import BackboneConfig
 from yavla.models.protocols import BackboneBase, VisionEncoderBase
 
-VLMBuilder = Callable[[BackboneConfig], tuple[VisionEncoderBase, BackboneBase]]
+VLMBuilder = Callable[[Any], tuple[VisionEncoderBase, BackboneBase]]
 
 
 class VLMRegistry:
@@ -23,7 +23,7 @@ class VLMRegistry:
 
         return decorator
 
-    def build(self, config: BackboneConfig) -> tuple[VisionEncoderBase, BackboneBase]:
+    def build(self, config: Any) -> tuple[VisionEncoderBase, BackboneBase]:
         if config.type not in self._builders:
             available = ", ".join(sorted(self._builders.keys()))
             raise KeyError(f"Unknown VLM type '{config.type}'. Available: [{available}]")

@@ -10,9 +10,6 @@ from yavla.models.encoders.proprio import (
     proprio_registry as proprio_registry,
 )
 from yavla.models.encoders.vision import (
-    PaliGemmaVisionEncoder as PaliGemmaVisionEncoder,
-)
-from yavla.models.encoders.vision import (
     VisionEncoderConfig as VisionEncoderConfig,
 )
 from yavla.models.encoders.vision import (

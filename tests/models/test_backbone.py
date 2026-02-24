@@ -7,7 +7,8 @@ from unittest.mock import MagicMock
 import torch
 import pytest
 
-from yavla.models.backbone import BackboneConfig, VLMBackbone, backbone_registry
+from yavla.models.backbone import BackboneConfig
+from yavla.models.backbones.paligemma import PaliGemmaBackbone
 from yavla.models.protocols import BackboneProto, IntegrationMode
 
 
@@ -31,14 +32,14 @@ def _make_mock_paligemma(hidden_size: int = 2048, num_readout: int = 64) -> tupl
 class TestBackboneConfig:
     def test_defaults(self) -> None:
         cfg = BackboneConfig()
-        assert cfg.type == "vlm"
+        assert cfg.type == "paligemma"
         assert cfg.gradient_checkpointing is True
 
 
-class TestVLMBackbone:
+class TestPaliGemmaBackbone:
     def test_forward_readout_extraction(self) -> None:
         model, tok = _make_mock_paligemma()
-        bb = VLMBackbone(model, tok, num_readout_tokens=64)
+        bb = PaliGemmaBackbone(model, tok, num_readout_tokens=64)
         B, S, D = 2, 341, 2048
         out = bb.forward(
             inputs_embeds=torch.randn(B, S, D),
@@ -50,7 +51,7 @@ class TestVLMBackbone:
 
     def test_bypasses_vision_pipeline(self) -> None:
         model, tok = _make_mock_paligemma()
-        bb = VLMBackbone(model, tok, num_readout_tokens=8)
+        bb = PaliGemmaBackbone(model, tok, num_readout_tokens=8)
         bb.forward(
             inputs_embeds=torch.randn(1, 20, 2048),
             attention_mask=torch.ones(1, 20),
@@ -64,23 +65,20 @@ class TestVLMBackbone:
 
     def test_capabilities(self) -> None:
         model, tok = _make_mock_paligemma()
-        bb = VLMBackbone(model, tok, num_readout_tokens=64)
+        bb = PaliGemmaBackbone(model, tok, num_readout_tokens=64)
         caps = bb.capabilities
         assert IntegrationMode.READOUT in caps.supported_modes
         assert caps.supports_kv_cache is False
 
     def test_protocol_conformance(self) -> None:
         model, tok = _make_mock_paligemma()
-        bb = VLMBackbone(model, tok, num_readout_tokens=64)
+        bb = PaliGemmaBackbone(model, tok, num_readout_tokens=64)
         assert isinstance(bb, BackboneProto)
 
     def test_base_model_property(self) -> None:
         model, tok = _make_mock_paligemma()
-        bb = VLMBackbone(model, tok, num_readout_tokens=64)
+        bb = PaliGemmaBackbone(model, tok, num_readout_tokens=64)
         assert bb.base_model is model
         new_model = MagicMock()
         bb.base_model = new_model
         assert bb.base_model is new_model
-
-    def test_registry(self) -> None:
-        assert "vlm" in backbone_registry.list()

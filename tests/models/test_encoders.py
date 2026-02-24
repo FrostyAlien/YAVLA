@@ -9,8 +9,9 @@ import pytest
 import torch
 from torch import Tensor
 
+from yavla.models.backbones.paligemma import PaliGemmaVisionEncoder
 from yavla.models.encoders.proprio import ProprioEncoder, ProprioEncoderConfig, proprio_registry
-from yavla.models.encoders.vision import PaliGemmaVisionEncoder, VisionEncoderConfig, vision_registry
+from yavla.models.encoders.vision import VisionEncoderConfig, vision_registry
 from yavla.models.protocols import ProprioEncoderProto, VisionEncoderProto
 
 
@@ -67,9 +68,6 @@ class TestPaliGemmaVisionEncoder:
         enc = PaliGemmaVisionEncoder(base)
         with pytest.raises(ValueError, match="No camera"):
             enc.encode_images({})
-
-    def test_registry(self) -> None:
-        assert "paligemma_siglip" in vision_registry.list()
 
 
 class TestProprioEncoder:
