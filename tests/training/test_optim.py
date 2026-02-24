@@ -41,12 +41,12 @@ class _StubBackbone(BackboneBase):
     def hidden_dim(self) -> int:
         return 4
 
-    @property
-    def tokenizer(self) -> Any:
-        return None
+    def embed_language(self, texts: list[str]) -> tuple[Tensor, Tensor]:
+        B = len(texts)
+        return torch.zeros(B, 1, 4), torch.ones(B, 1)
 
     def forward(self, inputs_embeds: Tensor, attention_mask: Tensor, token_type_ids: Tensor) -> BackboneOutput:
-        return BackboneOutput(last_hidden_state=inputs_embeds, readout_vectors=None)
+        return BackboneOutput(readout_states=None, token_states=inputs_embeds, attention_mask=attention_mask)
 
 
 class _StubPolicy(PolicyBase):
@@ -62,7 +62,7 @@ class _StubPolicy(PolicyBase):
         return LossDict(total=torch.tensor(0.0))
 
     def predict(self, obs: ObservationBatch) -> ActionChunk:
-        return ActionChunk(actions=torch.zeros(1, 1, 2), dt_s=0.1)
+        return ActionChunk(actions=torch.zeros(1, 1, 2), dt_hz=10.0, chunk_len=1)
 
 
 # -- Tests --------------------------------------------------------------------

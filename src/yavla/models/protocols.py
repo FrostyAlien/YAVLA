@@ -60,8 +60,7 @@ class BackboneProto(Protocol):
     def capabilities(self) -> BackboneCapabilities: ...
     @property
     def hidden_dim(self) -> int: ...
-    @property
-    def tokenizer(self) -> Any: ...
+    def embed_language(self, texts: list[str]) -> tuple[Tensor, Tensor]: ...
     def forward(self, inputs_embeds: Tensor, attention_mask: Tensor, token_type_ids: Tensor) -> BackboneOutput: ...
 
 
@@ -125,12 +124,28 @@ class BackboneBase(nn.Module, ABC):
     @abstractmethod
     def hidden_dim(self) -> int: ...
 
-    @property
     @abstractmethod
-    def tokenizer(self) -> Any: ...
+    def embed_language(self, texts: list[str]) -> tuple[Tensor, Tensor]:
+        """Tokenize and embed language texts.
+
+        Args:
+            texts: Non-empty list of language strings, one per batch element.
+
+        Returns:
+            Tuple of (embeddings ``[B, T, D]``, attention_mask ``[B, T]``).
+
+        Raises:
+            ValueError: If *texts* is empty.
+        """
+        ...
 
     @abstractmethod
     def forward(self, inputs_embeds: Tensor, attention_mask: Tensor, token_type_ids: Tensor) -> BackboneOutput: ...
+
+    @property
+    def tokenizer(self) -> Any:
+        """The tokenizer, if exposed. Not part of the abstract contract."""
+        raise NotImplementedError
 
     @property
     def base_model(self) -> Any:

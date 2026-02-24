@@ -42,9 +42,9 @@ class _StubBackbone(BackboneBase):
     def hidden_dim(self) -> int:
         return 4
 
-    @property
-    def tokenizer(self) -> Any:
-        return None
+    def embed_language(self, texts: list[str]) -> tuple[Tensor, Tensor]:
+        B = len(texts)
+        return torch.zeros(B, 1, 4), torch.ones(B, 1)
 
     def forward(self, inputs_embeds: Tensor, attention_mask: Tensor, token_type_ids: Tensor) -> BackboneOutput:
         return BackboneOutput(

@@ -57,6 +57,16 @@ class VLMBackbone(BackboneBase):
     def tokenizer(self) -> Any:
         return self._tokenizer
 
+    def embed_language(self, texts: list[str]) -> tuple[Tensor, Tensor]:
+        """Tokenize and embed language via PaliGemma's tokenizer and embedding layer."""
+        tok_out = self._tokenizer(texts, return_tensors="pt", padding=True)
+        device = next(self.parameters()).device
+        embed_layer = self._base_model.get_input_embeddings()
+        input_ids = tok_out["input_ids"].to(device)
+        attention_mask = tok_out["attention_mask"].to(device)
+        embeddings = embed_layer(input_ids)
+        return embeddings, attention_mask
+
     def forward(self, inputs_embeds: Tensor, attention_mask: Tensor, token_type_ids: Tensor) -> BackboneOutput:
         outputs = self._model(
             input_ids=None,

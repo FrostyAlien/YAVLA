@@ -60,9 +60,9 @@ class _StubBackbone(BackboneBase):
     def hidden_dim(self) -> int:
         return 2048
 
-    @property
-    def tokenizer(self) -> Any:
-        return None
+    def embed_language(self, texts: list[str]) -> tuple[Tensor, Tensor]:
+        B = len(texts)
+        return torch.zeros(B, 1, 2048), torch.ones(B, 1)
 
     def forward(self, inputs_embeds: Tensor, attention_mask: Tensor, token_type_ids: Tensor) -> BackboneOutput:
         B = inputs_embeds.shape[0]
@@ -108,6 +108,13 @@ class TestProtocolConformance:
     def test_backbone_proto(self) -> None:
         bb = _StubBackbone()
         assert isinstance(bb, BackboneProto)
+
+    def test_backbone_embed_language_contract(self) -> None:
+        bb = _StubBackbone()
+        embeds, mask = bb.embed_language(["hello", "world"])
+        assert embeds.shape[0] == 2
+        assert embeds.shape[2] == bb.hidden_dim
+        assert mask.shape == embeds.shape[:2]
 
     def test_action_head_proto(self) -> None:
         head = _StubActionHead()
