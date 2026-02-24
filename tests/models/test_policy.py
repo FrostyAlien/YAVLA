@@ -124,12 +124,9 @@ class TestVLAPolicy:
 
         # Mock backbone
         backbone = MagicMock()
-        backbone.base_model = MagicMock()
-        backbone.base_model.get_input_embeddings.return_value = MagicMock(
-            side_effect=lambda ids: torch.randn(ids.shape[0], ids.shape[1], D)
+        backbone.embed_language = MagicMock(
+            return_value=(torch.randn(self.B, 3, D), torch.ones(self.B, 3))
         )
-        tok_output = {"input_ids": torch.ones(self.B, 3, dtype=torch.long), "attention_mask": torch.ones(self.B, 3)}
-        backbone.tokenizer = MagicMock(return_value=tok_output)
 
         total_seq = self.N_IMG + 1 + 3 + self.N_READOUT
         backbone.return_value = BackboneOutput(

@@ -77,16 +77,14 @@ class VLAPolicy(PolicyBase):
         image_embeds = self.vision_encoder.encode_images(obs.images)
         proprio_embeds = self.proprio_encoder.encode_proprio(obs.proprio)
 
-        # Tokenize language via backbone's tokenizer, embed via unwrapped base_model
+        # Normalize language to list[str] matching batch size, then delegate to backbone
+        batch_size = image_embeds.shape[0]
         lang = obs.language or ""
         if isinstance(lang, str):
-            lang = [lang]
-        tok_out = self.backbone.tokenizer(lang, return_tensors="pt", padding=True)
-        input_ids = tok_out["input_ids"].to(image_embeds.device)
-        language_attn_mask = tok_out["attention_mask"].to(image_embeds.device)
-        lang_embeds = self.backbone.base_model.get_input_embeddings()(input_ids)
+            lang = [lang] * batch_size
+        lang_embeds, lang_attn_mask = self.backbone.embed_language(lang)
 
-        return image_embeds, proprio_embeds, lang_embeds, language_attn_mask
+        return image_embeds, proprio_embeds, lang_embeds, lang_attn_mask
 
     def merge_tokens(
         self,

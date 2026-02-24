@@ -21,7 +21,7 @@
 
 ## 4. Refactor build_policy and VLAPolicy
 
-- [ ] 4.1 Refactor `build_policy()` to call `vlm_registry.build(config.backbone)` for vision encoder + backbone, then build remaining modules generically
+- [x] 4.1 Refactor `build_policy()` to call `vlm_registry.build(config.backbone)` for vision encoder + backbone, then build remaining modules generically
 - [ ] 4.2 Simplify `VLAPolicy.encode_observations()` to call `self.backbone.embed_language()` instead of reaching into tokenizer/embeddings
 - [ ] 4.3 Update `from_pretrained()` to read `config.backbone.type` for dispatch, defaulting to `"paligemma"` for pre-refactor checkpoints
 - [ ] 4.4 Run full unit test suite — verify no regressions
