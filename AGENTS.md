@@ -38,7 +38,21 @@ Subclasses can override pipeline steps for different VLA paradigms: For example,
 
 `validate_integration()` checks backbone↔head compatibility at construction time using capability/requirement negotiation.
 
-### Adding New Components
+### Key Abstractions (src/yavla/models/)
+
+- **protocols.py** — ABC base classes with `BackboneCapabilities` / `ActionHeadRequirements` for integration negotiation
+- **vlm_registry.py** — `VLMRegistry` mapping `BackboneConfig.type` → builder returning `(VisionEncoderBase, BackboneBase)` pairs
+- **backbones/** — VLM-specific implementations (e.g., `backbones/paligemma.py` has `PaliGemmaBackbone`, `PaliGemmaVisionEncoder`, builder)
+- **policy.py** — `VLAPolicy`, `build_policy()` factory, serialization
+
+### Adding New VLM Backbones
+
+1. Create `backbones/<vlm_name>.py` implementing `BackboneBase` and `VisionEncoderBase`
+2. Implement a builder function returning `(VisionEncoderBase, BackboneBase)`
+3. Register with `@vlm_registry.register("<type>")`
+4. Model variants are selected via `BackboneConfig.vlm_name` (HF model ID) — no extra code per variant
+
+### Adding Other Components
 
 1. Implement the appropriate base class from protocols.py
 2. Define a config dataclass with a `type` field

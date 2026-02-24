@@ -5,7 +5,7 @@
 ## What Changes
 
 - **BREAKING**: `build_policy()` delegates VLM-specific loading to backbone-type-specific builders instead of inline PaliGemma code
-- **BREAKING**: `BackboneBase` gains `embed_language(texts) -> (embeddings, attention_mask)` abstract method; existing `VLMBackbone` must implement it
+- **BREAKING**: `BackboneBase` gains `embed_language(texts) -> (embeddings, attention_mask)` abstract method; existing backbone must implement it
 - `VLAPolicy.encode_observations()` calls `self.backbone.embed_language()` instead of reaching into `backbone.tokenizer` and `backbone.base_model.get_input_embeddings()`
 - Current PaliGemma code moves into a `PaliGemmaBackbone` builder (no behavior change for existing users)
 - Backlog: SmolVLM2 backbone support (256M/500M/2.2B) — first new VLM, pending research on interface details
@@ -25,8 +25,10 @@
 
 - `src/yavla/models/policy.py` — `build_policy()` refactored, `VLAPolicy.encode_observations()` simplified
 - `src/yavla/models/protocols.py` — `BackboneBase` gains `embed_language()` abstract method
-- `src/yavla/models/backbone.py` — `VLMBackbone` implements `embed_language()`, PaliGemma builder extracted
-- `src/yavla/models/encoders/vision.py` — `PaliGemmaVisionEncoder` unchanged but loading moves to builder
+- `src/yavla/models/backbones/paligemma.py` — `PaliGemmaBackbone` (renamed from `VLMBackbone`) with `embed_language()`, `PaliGemmaVisionEncoder`, and `build_paligemma_vlm` builder
+- `src/yavla/models/vlm_registry.py` — `VLMRegistry` mapping `type` → builder returning `(VisionEncoderBase, BackboneBase)`
+- `src/yavla/models/backbone.py` — reduced to `BackboneConfig` only (implementation moved to `backbones/`)
+- `src/yavla/models/encoders/vision.py` — reduced to `VisionEncoderConfig` only (implementation moved to `backbones/`)
 - `src/yavla/models/config.py` — `BackboneConfig` may need VLM-type-specific sub-configs
 - `tests/models/` — existing tests may need updates for new `embed_language()` on backbone mocks
 - `tests/integration/` — new training integration test file

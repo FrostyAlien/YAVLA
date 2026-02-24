@@ -58,11 +58,20 @@ Subclasses can override pipeline steps for different VLA paradigms: For example,
 
 - **protocols.py** — ABC base classes (`PolicyBase`, `VisionEncoderBase`, `BackboneBase`, `ActionHeadBase`, `TokenMergerBase`, `ActionDecoderBase`) with `BackboneCapabilities` / `ActionHeadRequirements` for integration negotiation
 - **registry.py** — Generic `Registry[ConfigT, ModuleT]` for config-driven component instantiation; new components register by name, built via `registry.build(config)`
+- **vlm_registry.py** — `VLMRegistry` mapping `BackboneConfig.type` → builder returning `(VisionEncoderBase, BackboneBase)` pairs; dispatches by architecture, not variant
+- **backbones/** — VLM-specific backbone + vision encoder implementations (e.g., `backbones/paligemma.py` contains `PaliGemmaBackbone`, `PaliGemmaVisionEncoder`, and the `build_paligemma_vlm` builder)
 - **config.py** — `PolicyConfig` dataclass tree composing sub-configs; forward-compatible deserialization drops unknown keys
 - **types.py** — Typed dataclasses at module boundaries: `ObservationBatch`, `BackboneOutput`, `ActionPrediction`, `ActionChunk`, `TrainingBatch`, `LossDict`, `ActionSpaceSpec`, `ProprioSpec`
 - **policy.py** — `VLAPolicy`, `build_policy()` factory, `save_pretrained()`/`from_pretrained()` serialization
 
-### Adding New Components
+### Adding New VLM Backbones
+
+1. Create `backbones/<vlm_name>.py` implementing `BackboneBase` and `VisionEncoderBase`
+2. Implement a builder function returning `(VisionEncoderBase, BackboneBase)`
+3. Register with `@vlm_registry.register("<type>")`
+4. Model variants are selected via `BackboneConfig.vlm_name` (HF model ID) — no extra code per variant
+
+### Adding Other Components
 
 1. Implement the appropriate base class from protocols.py
 2. Define a config dataclass with a `type` field
