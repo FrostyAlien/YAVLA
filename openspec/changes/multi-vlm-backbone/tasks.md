@@ -7,8 +7,8 @@
 
 ## 2. Create VLM Registry
 
-- [ ] 2.1 Create `src/yavla/models/vlm_registry.py` with a `vlm_registry` that maps `type` string to builder functions returning `tuple[VisionEncoderBase, BackboneBase]`
-- [ ] 2.2 Add unit test for vlm_registry: build known type, error on unknown type
+- [x] 2.1 Create `src/yavla/models/vlm_registry.py` with a `vlm_registry` that maps `type` string to builder functions returning `tuple[VisionEncoderBase, BackboneBase]`
+- [x] 2.2 Add unit test for vlm_registry: build known type, error on unknown type
 
 ## 3. Extract PaliGemma into Dedicated Module
 
