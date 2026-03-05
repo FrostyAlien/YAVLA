@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 import torch
 
 from yavla.data.transforms import (
@@ -10,6 +11,7 @@ from yavla.data.transforms import (
     NormalizeTransform,
     RepackTransform,
     UnnormalizeTransform,
+    build_torchvision_transforms,
     compose,
 )
 
@@ -78,3 +80,39 @@ def test_image_transform_applies_to_multiple_keys() -> None:
     assert torch.equal(transformed["image_left"], torch.tensor([1, 2]))
     assert torch.equal(transformed["image_right"], torch.tensor([3, 4]))
     assert torch.equal(transformed["state"], sample["state"])
+
+
+def test_image_transform_uint8_is_coerced_before_torchvision_normalize() -> None:
+    transforms = build_torchvision_transforms(["Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))"])
+    image_transform = ImageTransform(transforms=transforms, camera_keys=["image"])
+    sample = {"image": torch.randint(0, 256, (3, 8, 8), dtype=torch.uint8)}
+
+    transformed = image_transform(sample)
+    image = transformed["image"]
+    assert isinstance(image, torch.Tensor)
+    assert image.dtype == torch.float32
+
+
+@pytest.mark.parametrize("target_hw", [(224, 224), (448, 448)])
+def test_siglip_transform_recipe_shape_dtype_and_range(target_hw: tuple[int, int]) -> None:
+    height, width = target_hw
+    transforms = build_torchvision_transforms(
+        [
+            f"Resize([{height}, {width}], 3)",
+            "Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))",
+        ]
+    )
+    image_transform = ImageTransform(transforms=transforms, camera_keys=["image"])
+    base_h, base_w = 32, 16
+    yy = torch.linspace(0, 1, base_h).view(1, base_h, 1)
+    xx = torch.linspace(0, 1, base_w).view(1, 1, base_w)
+    image_u8 = ((yy * 0.7 + xx * 0.3).clamp(0, 1).repeat(3, 1, 1) * 255).round().to(torch.uint8)
+    sample = {"image": image_u8}
+
+    transformed = image_transform(sample)
+    image = transformed["image"]
+    assert isinstance(image, torch.Tensor)
+    assert image.shape == (3, height, width)
+    assert image.dtype == torch.float32
+    assert float(image.min()) >= -1.05
+    assert float(image.max()) <= 1.05

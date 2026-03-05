@@ -43,7 +43,7 @@ This page covers `DataConfig` fields, YAML/CLI configuration, common recipes, an
 |-------|------|---------|-------------|
 | `normalize` | `bool` | `True` | Enable statistical normalization |
 | `normalize_mode` | `"z-score" \| "min-max"` | `"z-score"` | Normalization method |
-| `normalize_keys` | `list[str] \| None` | `None` | Keys to normalize (`None` = all keys that have stats entries) |
+| `normalize_keys` | `list[str] \| None` | `None` | Keys to normalize (`None` = all stat-backed keys excluding camera keys) |
 | `repack_keys` | `dict[str, str] \| None` | `None` | Key remapping (dataset key → model key) |
 | `feature_keys` | `list[str] \| None` | `None` | Explicit feature column selection |
 | `image_transforms` | `list[str] \| None` | `None` | Torchvision v2 transform names for camera keys |
@@ -66,7 +66,6 @@ dataset:
   video_backend: "pyav"
   normalize: true
   normalize_mode: "z-score"
-  image_transforms: []
 ```
 
 `DataConfig` is also compatible with `tyro` for CLI overrides:
@@ -74,6 +73,39 @@ dataset:
 ```bash
 python train.py --dataset.backend lazy --dataset.batch-size 64
 ```
+
+## Notes: Camera Normalization + SigLIP/PaliGemma Preprocessing
+
+### Dataset-stat normalization excludes camera keys by default
+
+When `normalize=true` and `normalize_keys` is omitted / `null`, YAVLA normalizes all keys that have dataset stats
+**except** camera keys (image/video). To include camera keys, explicitly list them in `normalize_keys`:
+
+```yaml
+dataset:
+  normalize: true
+  normalize_keys:
+    - observation.state
+    - action
+    - observation.images.laptop  # opt-in: normalize images using dataset stats
+```
+
+### Canonical SigLIP/PaliGemma recipe (dataset layer)
+
+SigLIP/PaliGemma expects dataset-layer preprocessed `pixel_values` (no model-internal processor). The canonical recipe is:
+
+- `Resize([H, W], 3)`
+- `Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))`
+
+Use the list form for resize (`[H, W]`) to avoid tuple-parsing pitfalls.
+
+When training SigLIP/PaliGemma backbones, `scripts/train.py` auto-wires this recipe when `image_transforms` is
+omitted / `null`. Set `image_transforms: []` to explicitly disable preprocessing, or provide a non-empty list
+to take full control.
+
+To override the default checkpoint-derived resize target, set both `vlm_image_height_override` and
+`vlm_image_width_override` in the training config. If the override differs from the checkpoint size, training
+logs a warning (you are responsible for verifying VLM compatibility).
 
 ## Common Recipes
 

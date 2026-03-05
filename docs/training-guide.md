@@ -297,6 +297,22 @@ pixi run train --config configs/train.yaml \
   --training.dataset.action-chunk-size 4
 ```
 
+### SigLIP/PaliGemma image preprocessing
+
+SigLIP/PaliGemma expects dataset-layer preprocessed `pixel_values` (no model-internal processor). When training
+SigLIP/PaliGemma backbones:
+
+- `dataset.image_transforms`: omitted / `null` → auto-wire canonical SigLIP transforms based on the loaded checkpoint
+  `vision_config.image_size`
+- `dataset.image_transforms: []` → explicitly disable preprocessing
+- non-empty `dataset.image_transforms` → use your transforms as-is
+
+Canonical recipe uses list form for resize: `Resize([H, W], 3)` (avoid `Resize((H, W))`).
+
+To override the checkpoint-derived resize target, set both `vlm_image_height_override` and
+`vlm_image_width_override`. If the override differs from the checkpoint size, training logs a warning (you are
+responsible for verifying VLM compatibility).
+
 ## Full Config Reference
 
 Complete annotated YAML showing all fields with defaults:
@@ -311,7 +327,7 @@ dataset:
   persistent_workers: true
   normalize: true
   normalize_mode: "z-score"            # "z-score" | "min-max"
-  image_transforms: []
+  image_transforms: null               # null/omitted = auto-wire for SigLIP; [] = disable
   video_backend: "pyav"
 
 # Optimizer
@@ -339,6 +355,8 @@ output_dir: "outputs/train"
 resume: false
 gradient_checkpointing: true
 use_policy_preset: true
+vlm_image_height_override: null        # set both height+width to override VLM resize target
+vlm_image_width_override: null
 wandb: false
 gradient_accumulation_steps: 1
 ```

@@ -46,5 +46,7 @@ class TrainingConfig:
     resume: bool = False
     gradient_checkpointing: bool = True
     use_policy_preset: bool = True
+    vlm_image_height_override: int | None = None
+    vlm_image_width_override: int | None = None
     wandb: bool = False
     gradient_accumulation_steps: int = 1

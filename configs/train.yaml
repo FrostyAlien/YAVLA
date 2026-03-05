@@ -10,7 +10,6 @@ dataset:
   video_backend: "pyav"
   normalize: true
   normalize_mode: "z-score"
-  image_transforms: []
 
 optimizer:
   name: "AdamW"

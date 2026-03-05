@@ -8,7 +8,7 @@ Let `S_ckpt` be the expected image size declared by the selected backbone checkp
 Let `(H, W)` be the *effective* preprocessing resize target used for SigLIP preprocessing:
 
 - By default: `H = S_ckpt` and `W = S_ckpt`
-- If `TrainingConfig.siglip_image_height_override` and `TrainingConfig.siglip_image_width_override` are both set: `H = siglip_image_height_override`, `W = siglip_image_width_override`
+- If `TrainingConfig.vlm_image_height_override` and `TrainingConfig.vlm_image_width_override` are both set: `H = vlm_image_height_override`, `W = vlm_image_width_override`
 
 In config transform strings, `H`/`W` are placeholders for those concrete integer values.
 
@@ -50,7 +50,7 @@ If a training-time size override is configured (both height and width), the trai
 
 #### Scenario: Auto-wire preprocessing with override (warning-only)
 - **WHEN** the selected backbone checkpoint expects `S_ckpt` and `DataConfig.image_transforms is None`
-- **AND** `TrainingConfig.siglip_image_height_override` and `TrainingConfig.siglip_image_width_override` are set to `(H, W)`
+- **AND** `TrainingConfig.vlm_image_height_override` and `TrainingConfig.vlm_image_width_override` are set to `(H, W)`
 - **THEN** the training entrypoint SHALL wire the canonical SigLIP preprocessing transform list using `Resize([H, W], 3)` + `Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))`
 - **AND** the training entrypoint SHALL log a warning that the checkpoint-declared size is being overridden and that the user is responsible for verifying VLM compatibility
 
@@ -63,7 +63,7 @@ If a training-time size override is configured (both height and width), the trai
 - **THEN** the training entrypoint SHALL NOT auto-wire image preprocessing (the user is responsible for ensuring those transforms match the selected backbone’s expectations)
 
 #### Scenario: Override requires both height and width
-- **WHEN** exactly one of `TrainingConfig.siglip_image_height_override` or `TrainingConfig.siglip_image_width_override` is set
+- **WHEN** exactly one of `TrainingConfig.vlm_image_height_override` or `TrainingConfig.vlm_image_width_override` is set
 - **THEN** training SHALL fail fast with an error explaining that both height and width overrides must be set together
 
 ## Non-normative references

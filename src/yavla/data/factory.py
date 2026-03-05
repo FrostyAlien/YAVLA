@@ -141,11 +141,15 @@ def build_transform_pipeline(config: DataConfig, metadata: LeRobotDatasetMetadat
         transforms.append(RepackTransform(config.repack_keys))
 
     if config.normalize and metadata.stats is not None:
+        normalize_keys = config.normalize_keys
+        if normalize_keys is None:
+            camera_keys = set(_camera_keys_from_metadata(metadata))
+            normalize_keys = [key for key in metadata.stats if key not in camera_keys]
         transforms.append(
             NormalizeTransform(
                 stats=metadata.stats,
                 mode=config.normalize_mode,
-                keys=config.normalize_keys,
+                keys=normalize_keys,
             )
         )
 

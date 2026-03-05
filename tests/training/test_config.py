@@ -38,6 +38,8 @@ class TestTrainingConfig:
         assert cfg.resume is False
         assert cfg.gradient_checkpointing is True
         assert cfg.use_policy_preset is True
+        assert cfg.vlm_image_height_override is None
+        assert cfg.vlm_image_width_override is None
         assert cfg.wandb is False
         assert cfg.gradient_accumulation_steps == 1
 

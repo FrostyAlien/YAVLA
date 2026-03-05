@@ -182,6 +182,8 @@ class ImageTransform:
             if camera_key not in output:
                 continue
             value = output[camera_key]
+            if isinstance(value, torch.Tensor) and value.dtype == torch.uint8:
+                value = value.to(dtype=torch.float32).div(255.0)
             for transform in self.transforms:
                 value = transform(value)
             output[camera_key] = value

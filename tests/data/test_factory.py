@@ -6,10 +6,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import torch
 from torch.utils.data import Dataset, IterableDataset
 
 from tests.data.helpers import make_fake_metadata, write_parquet_rows
-from yavla.data.factory import DataConfig, create_dataloader, plan_feature_columns, select_backend
+from yavla.data.factory import DataConfig, build_transform_pipeline, create_dataloader, plan_feature_columns, select_backend
 
 
 class _DummyMapDataset(Dataset[dict[str, Any]]):
@@ -196,3 +197,22 @@ def test_plan_feature_columns_respects_config(tmp_path: Path) -> None:
     )
     columns = plan_feature_columns(config, metadata)
     assert columns == ["action", "observation.state"]
+
+
+def test_build_transform_pipeline_default_normalize_keys_excludes_camera_keys(tmp_path: Path) -> None:
+    metadata = _metadata_with_local_data(tmp_path)
+    camera_key = "observation.images.laptop"
+    metadata.info["features"][camera_key] = {"dtype": "image", "shape": [3, 2, 2]}
+    metadata.stats[camera_key] = {"mean": 1.0, "std": 1.0}
+
+    transform = build_transform_pipeline(DataConfig(repo_id="dummy/repo", normalize=True, normalize_keys=None), metadata)
+    assert transform is not None
+
+    camera_tensor = torch.zeros(3, 2, 2)
+    sample = {
+        camera_key: camera_tensor,
+        "observation.state": torch.tensor([0.0, 0.0]),
+        "action": torch.tensor([0.0, 0.0]),
+    }
+    transformed = transform(sample)
+    assert torch.equal(transformed[camera_key], camera_tensor)

@@ -60,7 +60,7 @@ This change defines and enforces a dataset-layer preprocessing contract for SigL
 **Choice**: The training entrypoint SHALL keep dataset preprocessing aligned with the selected backbone checkpoint by default, while allowing an optional user override:
 
 - Derive the checkpoint-declared expected image size `S_ckpt` from the loaded model config (`vision_config.image_size`).
-- Optionally accept a user-provided resize target via training config (e.g., `TrainingConfig.siglip_image_height_override` + `TrainingConfig.siglip_image_width_override`):
+- Optionally accept a user-provided resize target via training config (e.g., `TrainingConfig.vlm_image_height_override` + `TrainingConfig.vlm_image_width_override`):
   - If either override field is set, both MUST be set.
   - If an override is provided, it becomes the effective resize target `(H, W)` for auto-wiring canonical SigLIP preprocessing.
   - Training SHALL log a warning that the checkpoint-declared size is being overridden and that the user is responsible for ensuring the selected VLM can accept the overridden resolution. If `(H, W)` differs from the checkpoint-declared `(S_ckpt, S_ckpt)`, the warning SHOULD include both values.

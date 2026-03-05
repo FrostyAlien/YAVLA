@@ -49,9 +49,13 @@ The factory SHALL use `DataConfig.backend` directly and validate unsupported fea
 ### Requirement: Transform pipeline wiring
 The factory SHALL compose and attach the transform pipeline to the dataset based on `DataConfig` settings.
 
-#### Scenario: Normalization enabled
-- **WHEN** `DataConfig.normalize=True`
-- **THEN** the factory SHALL load stats from `LeRobotDatasetMetadata.stats` and include a `NormalizeTransform` in the pipeline
+#### Scenario: Normalization enabled with default keys excludes camera keys
+- **WHEN** `DataConfig.normalize=True`, dataset stats are available via `LeRobotDatasetMetadata.stats`, and `DataConfig.normalize_keys is None`
+- **THEN** the factory SHALL include a `NormalizeTransform` in the pipeline configured with an explicit key list derived from stats keys that EXCLUDES all camera keys from dataset metadata
+
+#### Scenario: Normalization enabled with explicit keys
+- **WHEN** `DataConfig.normalize=True`, dataset stats are available via `LeRobotDatasetMetadata.stats`, and `DataConfig.normalize_keys` is explicitly provided
+- **THEN** the factory SHALL include a `NormalizeTransform(keys=DataConfig.normalize_keys)` in the pipeline (even if that list includes camera/image keys)
 
 #### Scenario: Normalization disabled
 - **WHEN** `DataConfig.normalize=False`

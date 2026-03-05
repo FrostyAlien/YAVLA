@@ -30,6 +30,7 @@ import tyro
 from yavla.models.config import PolicyConfig
 from yavla.models.policy import build_policy
 from yavla.training import Trainer, TrainingConfig, create_training_dataloader
+from yavla.training.siglip_preprocess import autowire_siglip_image_transforms
 
 LOGGER = logging.getLogger(__name__)
 
@@ -99,6 +100,16 @@ def main() -> None:
 
     LOGGER.info("Building policy...")
     policy = build_policy(cfg.policy)
+
+    if cfg.policy.backbone.type == "paligemma":
+        try:
+            ckpt_image_size = int(policy.backbone.base_model.config.vision_config.image_size)
+        except Exception as exc:  # pragma: no cover
+            sys.exit(f"error: failed to derive SigLIP checkpoint image_size from loaded model config: {exc}")
+        try:
+            autowire_siglip_image_transforms(cfg.training, ckpt_image_size=ckpt_image_size)
+        except ValueError as exc:
+            sys.exit(f"error: {exc}")
 
     LOGGER.info("Creating dataloader...")
     dataloader = create_training_dataloader(
