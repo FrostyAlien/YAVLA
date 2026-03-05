@@ -103,7 +103,7 @@ class TestVLAPolicy:
 
     B, D, N_IMG, N_READOUT, CHUNK, ADIM = 2, 64, 4, 8, 5, 7
 
-    def _make_policy(self) -> "VLAPolicy":
+    def _make_policy(self, n_img: int | None = None) -> "VLAPolicy":
         from yavla.models.policy import VLAPolicy
         from yavla.models.backbones.paligemma import PaliGemmaVisionEncoder
         from yavla.models.encoders.proprio import ProprioEncoder, ProprioEncoderConfig
@@ -111,10 +111,11 @@ class TestVLAPolicy:
         from yavla.models.heads.mlp import MLPRegressionHead, MLPHeadConfig
 
         D = self.D
+        n_img = self.N_IMG if n_img is None else n_img
 
         # Mock vision encoder
         vision = MagicMock(spec=PaliGemmaVisionEncoder)
-        vision.encode_images = MagicMock(return_value=torch.randn(self.B, self.N_IMG, D))
+        vision.encode_images = MagicMock(return_value=torch.randn(self.B, n_img, D))
 
         # Real proprio encoder
         proprio = ProprioEncoder(ProprioEncoderConfig(proprio_dim=7, backbone_dim=D))
@@ -128,7 +129,7 @@ class TestVLAPolicy:
             return_value=(torch.randn(self.B, 3, D), torch.ones(self.B, 3))
         )
 
-        total_seq = self.N_IMG + 1 + 3 + self.N_READOUT
+        total_seq = n_img + 1 + 3 + self.N_READOUT
         backbone.return_value = BackboneOutput(
             readout_states=torch.randn(self.B, self.N_READOUT, D),
             token_states=torch.randn(self.B, total_seq, D),
@@ -168,6 +169,38 @@ class TestVLAPolicy:
         assert isinstance(loss, LossDict)
         assert loss.total.shape == ()
         assert "l1" in loss.breakdown
+
+    def test_forward_accepts_multi_camera_images(self) -> None:
+        num_patches_per_camera = 4
+        images = {
+            "cam_left": torch.randn(self.B, 3, 224, 224),
+            "cam_right": torch.randn(self.B, 3, 224, 224),
+        }
+        n_img = len(images) * num_patches_per_camera
+
+        policy = self._make_policy(n_img=n_img)
+        obs = ObservationBatch(
+            images=images,
+            proprio=torch.randn(self.B, 7),
+            language=["pick up the cup"] * self.B,
+        )
+        batch = TrainingBatch(
+            observations=obs,
+            actions=torch.randn(self.B, self.CHUNK, self.ADIM),
+            dt_hz=10.0,
+            chunk_len=self.CHUNK,
+        )
+
+        loss = policy.forward(batch)
+        assert isinstance(loss, LossDict)
+
+        policy.vision_encoder.encode_images.assert_called_once()
+        passed_images = policy.vision_encoder.encode_images.call_args[0][0]
+        assert set(passed_images.keys()) == set(images.keys())
+
+        expected_seq = n_img + 1 + 3 + self.N_READOUT
+        inputs_embeds = policy.backbone.call_args[0][0]
+        assert inputs_embeds.shape == (self.B, expected_seq, self.D)
 
     def test_predict_returns_action_chunk(self) -> None:
         policy = self._make_policy()

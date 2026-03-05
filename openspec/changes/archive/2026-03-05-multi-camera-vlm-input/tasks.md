@@ -14,7 +14,7 @@
 
 ## 3. Pipeline Coverage
 
-- [ ] 3.1 Add a unit test that passes an `ObservationBatch` with multiple cameras through `VLAPolicy` (mock vision encoder output with `N_img=K*num_patches`) to ensure no downstream single-camera assumptions.
+- [x] 3.1 Add a unit test that passes an `ObservationBatch` with multiple cameras through `VLAPolicy` (mock vision encoder output with `N_img=K*num_patches`) to ensure no downstream single-camera assumptions.
 - [x] 3.2 Add an integration test variant (stub VLM) that uses two camera keys and verifies `build_policy() -> forward -> backward -> step` still works with multi-camera images.
 
 ## 4. Docs / Examples

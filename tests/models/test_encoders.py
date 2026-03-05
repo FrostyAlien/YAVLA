@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,7 +10,6 @@ from torch import Tensor
 
 from yavla.models.backbones.paligemma import PaliGemmaVisionEncoder
 from yavla.models.encoders.proprio import ProprioEncoder, ProprioEncoderConfig, proprio_registry
-from yavla.models.encoders.vision import VisionEncoderConfig, vision_registry
 from yavla.models.protocols import ProprioEncoderProto, VisionEncoderProto
 
 
@@ -24,9 +22,10 @@ def _make_mock_paligemma(hidden_size: int = 2048, image_size: int = 224, patch_s
     def fake_get_image_features(pixel_values: Tensor) -> Tensor:
         B = pixel_values.shape[0]
         num_patches = (image_size // patch_size) ** 2
-        return torch.randn(B, num_patches, hidden_size)
+        signature = pixel_values.mean(dim=(1, 2, 3))  # [B]
+        return signature[:, None, None].expand(B, num_patches, hidden_size).contiguous()
 
-    mock.get_image_features = fake_get_image_features
+    mock.get_image_features = MagicMock(side_effect=fake_get_image_features)
     return mock
 
 
@@ -37,14 +36,43 @@ class TestPaliGemmaVisionEncoder:
         out = enc.encode_images({"cam0": torch.randn(2, 3, 224, 224)})
         assert out.shape == (2, 256, 2048)
 
-    def test_reject_multi_camera(self) -> None:
+    def test_encode_multi_camera_scales_tokens(self) -> None:
         base = _make_mock_paligemma()
         enc = PaliGemmaVisionEncoder(base)
-        with pytest.raises(ValueError, match="single-camera"):
+        out = enc.encode_images(
+            {
+                "cam0": torch.randn(2, 3, 224, 224),
+                "cam1": torch.randn(2, 3, 224, 224),
+            }
+        )
+        assert out.shape == (2, 2 * 256, 2048)
+        base.get_image_features.assert_called_once()
+        pixel_values = base.get_image_features.call_args[0][0]
+        assert pixel_values.shape == (4, 3, 224, 224)
+
+    def test_multi_camera_ordering_is_deterministic(self) -> None:
+        base = _make_mock_paligemma(hidden_size=8)
+        enc = PaliGemmaVisionEncoder(base)
+
+        cam_a = torch.full((1, 3, 224, 224), 2.0)
+        cam_b = torch.full((1, 3, 224, 224), 1.0)
+
+        out1 = enc.encode_images({"b": cam_b, "a": cam_a})
+        out2 = enc.encode_images({"a": cam_a, "b": cam_b})
+
+        assert torch.allclose(out1, out2)
+        n_patch = enc.num_patches
+        assert out1[0, 0, 0].item() == pytest.approx(2.0)
+        assert out1[0, n_patch, 0].item() == pytest.approx(1.0)
+
+    def test_reject_mismatched_camera_shapes(self) -> None:
+        base = _make_mock_paligemma()
+        enc = PaliGemmaVisionEncoder(base)
+        with pytest.raises(ValueError, match="Mismatched camera tensor shapes"):
             enc.encode_images(
                 {
                     "cam0": torch.randn(1, 3, 224, 224),
-                    "cam1": torch.randn(1, 3, 224, 224),
+                    "cam1": torch.randn(2, 3, 224, 224),
                 }
             )
 

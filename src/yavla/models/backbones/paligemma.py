@@ -31,12 +31,29 @@ class PaliGemmaVisionEncoder(VisionEncoderBase):
     def encode_images(self, images: dict[str, Tensor]) -> Tensor:
         if len(images) == 0:
             raise ValueError("No camera images provided")
-        if len(images) > 1:
+
+        ordered_cams = sorted(images.keys())
+        pixel_values_list = [images[name] for name in ordered_cams]
+
+        expected_shape = pixel_values_list[0].shape
+        if len(expected_shape) != 4:
             raise ValueError(
-                f"MVP encoder supports single-camera only, got {len(images)} cameras: {list(images.keys())}"
+                f"Camera tensor must have shape [B, C, H, W], got {tuple(expected_shape)} for '{ordered_cams[0]}'"
             )
-        pixel_values = next(iter(images.values()))
-        result: Tensor = self._base_model.get_image_features(pixel_values)
+        for name, pixel_values in zip(ordered_cams, pixel_values_list, strict=True):
+            if pixel_values.shape != expected_shape:
+                raise ValueError(
+                    f"Mismatched camera tensor shapes: '{name}' has {tuple(pixel_values.shape)} but expected {tuple(expected_shape)}"
+                )
+
+        # Flatten cameras into the batch dimension for a single forward call:
+        # [K, B, C, H, W] -> [K*B, C, H, W] -> [K*B, N_patch, D] -> [B, K*N_patch, D]
+        stacked = torch.stack(pixel_values_list, dim=0)
+        num_cams, batch_size, channels, height, width = stacked.shape
+        flat = stacked.reshape(num_cams * batch_size, channels, height, width)
+        features: Tensor = self._base_model.get_image_features(flat)
+        features = features.reshape(num_cams, batch_size, features.shape[1], features.shape[2])
+        result = features.permute(1, 0, 2, 3).reshape(batch_size, num_cams * features.shape[2], features.shape[3])
         return result
 
 

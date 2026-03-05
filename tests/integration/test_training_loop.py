@@ -52,12 +52,34 @@ class _StubVisionEncoder(VisionEncoderBase):
         return _NUM_PATCHES
 
     def encode_images(self, images: dict[str, Tensor]) -> Tensor:
-        img = next(iter(images.values()))  # [B, C, H, W]
-        B = img.shape[0]
-        # Downsample to 8x8, flatten, project to hidden_dim
-        pooled = nn.functional.adaptive_avg_pool2d(img, (8, 8))  # [B, 3, 8, 8]
-        flat = pooled.reshape(B, 1, -1).expand(B, _NUM_PATCHES, -1)  # [B, N, 192]
-        return self._proj(flat)  # [B, N, D]
+        if len(images) == 0:
+            raise ValueError("No camera images provided")
+
+        ordered_cams = sorted(images.keys())
+        pixel_values_list = [images[name] for name in ordered_cams]
+
+        expected_shape = pixel_values_list[0].shape
+        if len(expected_shape) != 4:
+            raise ValueError(
+                f"Camera tensor must have shape [B, C, H, W], got {tuple(expected_shape)} for '{ordered_cams[0]}'"
+            )
+        for name, pixel_values in zip(ordered_cams, pixel_values_list, strict=True):
+            if pixel_values.shape != expected_shape:
+                raise ValueError(
+                    f"Mismatched camera tensor shapes: '{name}' has {tuple(pixel_values.shape)} but expected {tuple(expected_shape)}"
+                )
+
+        # Flatten cameras into the batch dimension:
+        # [K, B, C, H, W] -> [K*B, C, H, W] -> [B, K*N_patch, D]
+        stacked = torch.stack(pixel_values_list, dim=0)
+        num_cams, batch_size, channels, height, width = stacked.shape
+        flat = stacked.reshape(num_cams * batch_size, channels, height, width)
+
+        pooled = nn.functional.adaptive_avg_pool2d(flat, (8, 8))  # [K*B, 3, 8, 8]
+        flat_tokens = pooled.reshape(num_cams * batch_size, 1, -1).expand(num_cams * batch_size, _NUM_PATCHES, -1)
+        tokens = self._proj(flat_tokens)  # [K*B, N_patch, D]
+        tokens = tokens.reshape(num_cams, batch_size, tokens.shape[1], tokens.shape[2])
+        return tokens.permute(1, 0, 2, 3).reshape(batch_size, num_cams * tokens.shape[2], tokens.shape[3])
 
 
 class _StubBackbone(BackboneBase):
@@ -121,7 +143,25 @@ _NUM_READOUT = 8
 def _make_training_batch() -> TrainingBatch:
     """Create a synthetic TrainingBatch with random data matching policy config shapes."""
     obs = ObservationBatch(
-        images={"cam": torch.randn(_BATCH_SIZE, 3, 224, 224)},
+        images={"cam0": torch.randn(_BATCH_SIZE, 3, 224, 224)},
+        proprio=torch.randn(_BATCH_SIZE, _PROPRIO_DIM),
+        language=["pick up the block"] * _BATCH_SIZE,
+    )
+    return TrainingBatch(
+        observations=obs,
+        actions=torch.randn(_BATCH_SIZE, _CHUNK_LEN, _ACTION_DIM),
+        dt_hz=10.0,
+        chunk_len=_CHUNK_LEN,
+    )
+
+
+def _make_multi_camera_training_batch(num_cams: int = 2) -> TrainingBatch:
+    """Create a synthetic TrainingBatch with multiple camera views."""
+    if num_cams < 1:
+        raise ValueError("num_cams must be >= 1")
+    images = {f"cam{i}": torch.randn(_BATCH_SIZE, 3, 224, 224) for i in range(num_cams)}
+    obs = ObservationBatch(
+        images=images,
         proprio=torch.randn(_BATCH_SIZE, _PROPRIO_DIM),
         language=["pick up the block"] * _BATCH_SIZE,
     )
@@ -181,6 +221,10 @@ def test_build_forward_finite_loss(stub_registry: VLMRegistry) -> None:
     assert "l1" in loss.breakdown
     assert loss.breakdown["l1"].isfinite()
 
+    batch_multi = _make_multi_camera_training_batch(num_cams=2)
+    loss_multi = policy.forward(batch_multi)
+    assert loss_multi.total.isfinite(), f"Loss is not finite: {loss_multi.total.item()}"
+
 
 def test_forward_backward_step_updates_params(stub_registry: VLMRegistry) -> None:
     """forward → backward → optimizer step → assert parameters changed."""
@@ -208,3 +252,19 @@ def test_forward_backward_step_updates_params(stub_registry: VLMRegistry) -> Non
         if name in params_before and not torch.equal(p.data, params_before[name]):
             changed += 1
     assert changed > 0, "No parameters were updated after optimizer step"
+
+    # Multi-camera variant: ensure the same training loop works with >1 camera key.
+    params_before_multi = {
+        name: p.clone().detach() for name, p in policy.named_parameters() if p.requires_grad
+    }
+    optimizer.zero_grad()
+    batch_multi = _make_multi_camera_training_batch(num_cams=2)
+    loss_multi = policy.forward(batch_multi)
+    loss_multi.total.backward()
+    optimizer.step()
+
+    changed_multi = 0
+    for name, p in policy.named_parameters():
+        if name in params_before_multi and not torch.equal(p.data, params_before_multi[name]):
+            changed_multi += 1
+    assert changed_multi > 0, "No parameters were updated after optimizer step (multi-camera)"

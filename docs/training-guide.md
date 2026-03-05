@@ -136,6 +136,20 @@ The transform pipeline applies in order: repack → normalize → image transfor
 
 For full `DataConfig` reference and recipes, see [Dataset Layer Usage](dataset-layer/usage.md).
 
+### Multi-camera images
+
+Many real LeRobot datasets include multiple camera views per timestep (e.g., `cam_high`, `cam_left_wrist`, `cam_right_wrist`).
+YAVLA supports this via `ObservationBatch.images: dict[str, Tensor]` where each camera tensor has shape `[B, C, H, W]`.
+
+- **Canonical camera order:** cameras are concatenated in ascending lexicographic key order (`sorted(images.keys())`). This is
+  deterministic and does not depend on dict insertion order.
+- **Token shape:** vision tokens are returned as a single tensor `[B, N_img, D]` with `N_img = K * N_patch_per_camera`
+  where `K` is the number of camera keys present.
+- **Camera identity (v1):** no explicit camera embeddings; camera identity is implicit via its position in the concatenated token stream.
+- **Validation:** all cameras must have the same `[B, C, H, W]` shape; empty `images` is rejected.
+- **Compute/VRAM scaling:** `N_img` grows linearly with `K`, so attention cost and VRAM/runtime typically increase with the
+  number of cameras.
+
 ## Distributed Training
 
 ### Multi-GPU with Accelerate
