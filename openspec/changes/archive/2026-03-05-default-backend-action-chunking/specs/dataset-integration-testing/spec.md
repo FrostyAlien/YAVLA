@@ -13,5 +13,4 @@ Integration tests SHALL verify that `create_dataloader()` with `backend="default
 
 #### Scenario: Factory default backend supports action_chunk_size with end-of-episode padding
 - **WHEN** `create_dataloader()` is called with `DataConfig(repo_id="lerobot/pusht", backend="default", action_chunk_size=4, batch_size=2, num_workers=0)` and a sample corresponding to the final frame of an episode is accessed from the returned dataset
-- **THEN** the sample SHALL contain `action` as a 2-D tensor with first dimension `4`, and `action_is_pad` as a boolean tensor of shape `(4,)` with at least one `True` entry for padded future steps
-
+- **THEN** the sample SHALL contain `action` as a 2-D tensor with first dimension `4`, and `action_is_pad` as a boolean tensor of shape `(4,)` with at least one `True` entry for padded future steps, and the step-0 `action_is_pad` entry SHALL be `False`

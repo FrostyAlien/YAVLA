@@ -25,6 +25,10 @@ Integration tests SHALL verify that `create_dataloader()` with `backend="default
 - **WHEN** baseline default decode is available and `create_dataloader()` is called with `backend="default"`
 - **THEN** at least one media key in the first batch SHALL be a `torch.Tensor` with 4 dimensions `(B, C, H, W)` and dtype `torch.float32` or `torch.uint8`
 
+#### Scenario: Factory default backend supports action_chunk_size with end-of-episode padding
+- **WHEN** `create_dataloader()` is called with `DataConfig(repo_id="lerobot/pusht", backend="default", action_chunk_size=4, batch_size=2, num_workers=0)` and a sample corresponding to the final frame of an episode is accessed from the returned dataset
+- **THEN** the sample SHALL contain `action` as a 2-D tensor with first dimension `4`, and `action_is_pad` as a boolean tensor of shape `(4,)` with at least one `True` entry for padded future steps, and the step-0 `action_is_pad` entry SHALL be `False`
+
 ### Requirement: Integration test marker registration
 The project SHALL register a `integration` pytest marker in `pyproject.toml` so that integration tests are excluded from the default `pytest` invocation and only run when explicitly selected via `-m integration`.
 
@@ -132,4 +136,3 @@ The integration tests SHALL verify that `LazyLeRobotDataset.__getitems__` works 
 #### Scenario: Batched index access returns correct samples
 - **WHEN** `dataset.__getitems__([0, 1, 2])` is called on a `LazyLeRobotDataset` loaded with real data
 - **THEN** the result SHALL be a list of 3 dicts, each passing `validate_sample_schema`, with `index` values matching the requested indices
-

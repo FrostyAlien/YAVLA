@@ -128,9 +128,11 @@ YAVLA supports three dataset backends:
 
 | Backend | Best for | Key constraint |
 |---------|----------|----------------|
-| `default` | Standard LeRobot datasets | No `action_chunk_size` support |
+| `default` | Standard LeRobot datasets | Supports `action_chunk_size` (delegates to LeRobot `delta_timestamps["action"]`) |
 | `lazy` | Large datasets, temporal features | Supports `delta_timestamps` + `action_chunk_size` |
 | `streaming` | Shard-based iteration | No `delta_timestamps` or `action_chunk_size` |
+
+To enable chunked action targets (required by `TrainingCollate`), set `dataset.action_chunk_size` on either `default` or `lazy` backends. Prefer `lazy` for large datasets.
 
 The transform pipeline applies in order: repack → normalize → image transforms.
 

@@ -170,9 +170,18 @@ def build_transform_pipeline(config: DataConfig, metadata: LeRobotDatasetMetadat
 def select_backend(config: DataConfig) -> BackendSelection:
     """Validate backend constraints and return the selected backend."""
 
+    if (
+        config.action_chunk_size is not None
+        and config.delta_timestamps is not None
+        and "action" in config.delta_timestamps
+    ):
+        raise ValueError(
+            "Ambiguous action chunk configuration: set exactly one of "
+            "`action_chunk_size` or `delta_timestamps['action']` (use `action_chunk_size` "
+            "for contiguous future actions, or `delta_timestamps['action']` for custom/non-contiguous deltas)."
+        )
+
     if config.backend == "default":
-        if config.action_chunk_size is not None:
-            raise ValueError("default backend does not support action_chunk_size; use lazy backend")
         return BackendSelection(backend="default", reason="default backend (LeRobotDataset)")
 
     if config.backend == "lazy":
@@ -199,10 +208,20 @@ def create_dataloader(
     LOGGER.info("Selected data backend: %s | reason=%s", selection.backend, selection.reason)
 
     if selection.backend == "default":
+        delta_timestamps = config.delta_timestamps
+        if config.action_chunk_size is not None:
+            fps = float(metadata.fps)
+            action_deltas = [step / fps for step in range(config.action_chunk_size)]
+            if delta_timestamps is None:
+                delta_timestamps = {"action": action_deltas}
+            else:
+                delta_timestamps = dict(delta_timestamps)
+                delta_timestamps["action"] = action_deltas
+
         base_dataset = LeRobotDataset(
             repo_id=config.repo_id,
             root=config.root,
-            delta_timestamps=config.delta_timestamps,
+            delta_timestamps=delta_timestamps,
             video_backend=config.video_backend,
         )
         dataset: Any = _TransformingMapDataset(base_dataset, transform)

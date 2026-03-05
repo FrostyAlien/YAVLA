@@ -14,7 +14,7 @@ This page covers `DataConfig` fields, YAML/CLI configuration, common recipes, an
 | `root` | `str \| Path \| None` | `None` | Local data root override |
 | `backend` | `"default" \| "lazy" \| "streaming"` | `"default"` | Dataset backend |
 | `delta_timestamps` | `dict[str, list[float]] \| None` | `None` | Temporal context offsets per feature key |
-| `action_chunk_size` | `int \| None` | `None` | Number of future action frames to assemble |
+| `action_chunk_size` | `int \| None` | `None` | Number of contiguous future action frames to assemble |
 
 ### DataLoader Fields
 
@@ -107,6 +107,12 @@ To override the default checkpoint-derived resize target, set both `vlm_image_he
 `vlm_image_width_override` in the training config. If the override differs from the checkpoint size, training
 logs a warning (you are responsible for verifying VLM compatibility).
 
+## Notes: Action Chunking
+
+- `action_chunk_size=K` is a convenience alias for contiguous forward action deltas (includes the current frame at step 0).
+- For custom/non-contiguous action deltas, set `delta_timestamps["action"]` directly and leave `action_chunk_size` unset.
+- Do not set both `action_chunk_size` and `delta_timestamps["action"]` (ambiguous; raises `ValueError`).
+
 ## Common Recipes
 
 ### Default backend (most common)
@@ -117,6 +123,19 @@ dataloader = create_dataloader(config)
 ```
 
 This uses the upstream `LeRobotDataset` backend.
+
+### Default backend with action chunking
+
+```python
+config = DataConfig(
+    repo_id="lerobot/aloha_sim",
+    backend="default",
+    action_chunk_size=4,
+)
+dataloader = create_dataloader(config)
+```
+
+This delegates to upstream LeRobot `delta_timestamps["action"]` and yields `action_is_pad` masks at episode boundaries.
 
 ### Lazy backend with temporal features
 

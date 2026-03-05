@@ -6,7 +6,7 @@ This page explains how to choose a dataset backend and what each backend support
 
 ```
 Do you need action_chunk_size?
-  ├── Yes → lazy
+  ├── Yes → default or lazy
   └── No
         │
         ├── Do you need shard-iterable loading with shuffle buffer?
@@ -25,7 +25,7 @@ Set `backend` in `DataConfig`:
 | Value | Dataset class | When to use |
 |-------|--------------|-------------|
 | `"default"` | `_TransformingMapDataset(LeRobotDataset)` | Standard path; default choice |
-| `"lazy"` | `LazyLeRobotDataset` | Large local datasets or when `action_chunk_size` is required |
+| `"lazy"` | `LazyLeRobotDataset` | Large local datasets or when you want lazy Parquet reads |
 | `"streaming"` | `ShardInterleavedDataset` | Iterable shard-based loading with shuffle buffer |
 
 `DataConfig.backend` defaults to `"default"`.
@@ -35,7 +35,7 @@ Set `backend` in `DataConfig`:
 | Feature | default | lazy | streaming |
 |---------|---------|------|-----------|
 | `delta_timestamps` | Supported | Supported | Not supported (`ValueError`) |
-| `action_chunk_size` | Not supported (`ValueError`) | Supported | Not supported (`ValueError`) |
+| `action_chunk_size` | Supported | Supported | Not supported (`ValueError`) |
 | Random-access map dataset | Yes | Yes | No (iterable) |
 | Shuffle buffer interleaving | No | No | Yes |
 

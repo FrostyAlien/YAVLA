@@ -357,6 +357,34 @@ def test_factory_creates_default_dataloader(pusht_root: Path) -> None:
     assert decoded, "expected at least one decoded 4-D batched media tensor in default dataloader batch"
 
 
+def test_factory_default_backend_action_chunk_size(pusht_root: Path) -> None:
+    dataloader = create_dataloader(
+        DataConfig(
+            repo_id=REPO_ID,
+            root=pusht_root,
+            backend="default",
+            action_chunk_size=4,
+            batch_size=2,
+            num_workers=0,
+            normalize=False,
+        )
+    )
+
+    metadata = _meta(pusht_root)
+    last_idx = int(metadata.episodes["dataset_to_index"][0]) - 1
+    sample = dataloader.dataset[last_idx]
+
+    action = torch.as_tensor(sample["action"])
+    action_is_pad = torch.as_tensor(sample["action_is_pad"])
+
+    assert action.ndim == 2
+    assert action.shape[0] == 4
+    assert action_is_pad.dtype == torch.bool
+    assert tuple(action_is_pad.shape) == (4,)
+    assert torch.any(action_is_pad).item() is True
+    assert action_is_pad[0].item() is False
+
+
 def test_normalize_transform_on_real_data(pusht_root: Path) -> None:
     metadata = _meta(pusht_root)
     feature_columns = _non_video_feature_columns(metadata)

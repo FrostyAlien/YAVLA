@@ -4,6 +4,8 @@ YAVLA’s training collation path (`TrainingCollate`) requires chunked action ta
 
 LeRobot’s `LeRobotDataset` already supports temporal queries via `delta_timestamps`: it converts requested time deltas (multiples of `1/fps`) to frame-index deltas, clamps queries to episode boundaries, and returns both the stacked values and a `{key}_is_pad` boolean mask. This mechanism can be reused to implement action chunking for the default backend without introducing a new indexing implementation.
 
+Upstream LeRobot already demonstrates future-action chunking through this exact mechanism (e.g., configuring `delta_timestamps["action"] = [t / dataset.fps for t in range(K)]`). This change makes that upstream capability available through YAVLA’s higher-level `action_chunk_size` knob when using the default backend.
+
 Current lazy-backend semantics for action chunking are:
 - `action` is stacked over contiguous future frames starting at the current frame: indices `idx + step` for `step=0..(K-1)`
 - `action_is_pad` marks positions that fall past episode end and clamps the queried index to the episode’s last frame (duplicating the final action)
@@ -46,24 +48,26 @@ This yields `action` of shape `[K, action_dim]` per-sample and `action_is_pad` o
 - Implement a custom `ActionChunkTransform` wrapper around `LeRobotDataset` that re-indexes into the dataset for each sample. Rejected: transforms in YAVLA are sample-only (no index context), and re-indexing would duplicate LeRobot’s episode-boundary logic.
 - Require users to switch to `lazy` backend. Rejected: prevents the first end-to-end run on small datasets and is unnecessary given LeRobot’s existing temporal query support.
 
-### D2: Keep lazy backend’s action chunking as the source of truth for semantics
+### D2: Define chunk semantics in upstream LeRobot terms
 
-**Choice:** Define “correct” chunk semantics to match existing `LazyLeRobotDataset._augment_with_action_chunk()` behavior:
+**Choice:** Define “correct” chunk semantics to match upstream LeRobot `delta_timestamps` behavior for forward action deltas, and ensure the lazy backend matches it. For `action_chunk_size=K`, this means:
 
 - includes current action at step 0
 - pads only at episode end (future steps beyond episode end are pad)
 - clamps padded steps to the last valid frame (duplicating the final action)
 
-**Why:** This is already tested and used by existing users. Default backend must match it to keep training code backend-agnostic.
+**Why:** The default backend is a thin wrapper around upstream `LeRobotDataset`, so upstream behavior is the most direct source of truth. The lazy backend already implements the same semantics for contiguous forward chunks; keeping them aligned ensures training code remains backend-agnostic.
 
 **Alternatives considered:**
-- Change lazy backend to use `delta_timestamps` for action as well. Rejected for now: unnecessary churn, and lazy backend already efficiently batches shard reads.
+- Treat the lazy backend’s current implementation as the source of truth. Rejected: the goal is “default backend == upstream LeRobot,” so semantics should be expressed in those upstream terms and then matched by lazy.
 
 ### D3: Resolve configuration conflicts explicitly (`action_chunk_size` vs `delta_timestamps["action"]`)
 
 **Choice:** If `action_chunk_size` is set and the user also provides `delta_timestamps` containing an `"action"` entry, raise a `ValueError` with a clear message (choose one mechanism).
 
 **Why:** Both mechanisms attempt to define the shape/semantics of the `action` key. Allowing both silently risks mismatched shapes vs the model’s `chunk_len` and inconsistent behavior between backends (lazy currently overwrites `action` in its action-chunk augmentation step).
+
+Users who need custom/non-contiguous action deltas should configure `delta_timestamps["action"]` directly and leave `action_chunk_size` unset.
 
 **Alternatives considered:**
 - Let explicit `delta_timestamps["action"]` override `action_chunk_size`. Rejected: would make `action_chunk_size` misleading and make training failures harder to diagnose.
@@ -95,7 +99,7 @@ This yields `action` of shape `[K, action_dim]` per-sample and `action_is_pad` o
 3. Add an integration test using a real dataset (e.g., `lerobot/pusht`) to assert:
    - `create_dataloader(... backend="default", action_chunk_size=K)` yields samples with `action.ndim == 2` and `action_is_pad` present
    - near episode end, `action_is_pad` contains at least one `True`
-4. Update docs/examples to advertise “default backend + action_chunk_size” as a supported path for the first training run.
+4. Update docs/examples to advertise “default backend + action_chunk_size” as a supported path for the first training run (including dataset-layer docs and the training guide).
 
 Rollback: revert the factory change and restore the `ValueError` guard for `backend="default"` + `action_chunk_size`.
 
@@ -103,4 +107,3 @@ Rollback: revert the factory change and restore the `ValueError` guard for `back
 
 - Should we add a first-class training-time check that `dataset.action_chunk_size == policy.action_head.chunk_len` to fail fast with a clearer error?
 - Do we want to extend streaming backend to support temporal features via a windowed/sharded buffering strategy, or keep “streaming is temporal-feature-incompatible” as a permanent constraint?
-

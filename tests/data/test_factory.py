@@ -91,9 +91,10 @@ def test_select_backend_explicit_streaming() -> None:
     assert selection.backend == "streaming"
 
 
-def test_select_backend_default_rejects_action_chunk_size() -> None:
-    with pytest.raises(ValueError, match="default backend does not support action_chunk_size"):
-        select_backend(DataConfig(repo_id="dummy/repo", action_chunk_size=2))
+def test_select_backend_default_allows_action_chunk_size() -> None:
+    config = DataConfig(repo_id="dummy/repo", backend="default", action_chunk_size=2)
+    selection = select_backend(config)
+    assert selection.backend == "default"
 
 
 def test_create_dataloader_explicit_modes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -151,20 +152,56 @@ def test_create_dataloader_streaming_rejects_action_chunk_size(
         )
 
 
-def test_create_dataloader_default_rejects_action_chunk_size(
+def test_create_dataloader_default_derives_action_delta_timestamps(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    metadata = _metadata_with_local_data(tmp_path)
+    captured_kwargs: dict[str, Any] = {}
+
+    def _capture_lerobot_dataset(*args: Any, **kwargs: Any) -> _DummyMapDataset:
+        captured_kwargs.update(kwargs)
+        return _DummyMapDataset()
+
+    monkeypatch.setattr("yavla.data.factory.LeRobotDatasetMetadata", lambda repo_id, root=None: metadata)
+    monkeypatch.setattr("yavla.data.factory.LeRobotDataset", _capture_lerobot_dataset)
+    monkeypatch.setattr("yavla.data.factory.LazyLeRobotDataset", lambda *args, **kwargs: _DummyLazyDataset())
+    monkeypatch.setattr("yavla.data.factory.ShardInterleavedDataset", lambda *args, **kwargs: _DummyStreamingDataset())
+
+    create_dataloader(
+        DataConfig(
+            repo_id="dummy/repo",
+            root=metadata.root,
+            backend="default",
+            action_chunk_size=3,
+            delta_timestamps={"observation.state": [0.0]},
+            normalize=False,
+            num_workers=0,
+        )
+    )
+
+    delta_timestamps = captured_kwargs.get("delta_timestamps")
+    assert isinstance(delta_timestamps, dict)
+    assert delta_timestamps.get("action") == pytest.approx([0.0, 0.1, 0.2])
+    assert delta_timestamps.get("observation.state") == [0.0]
+
+
+def test_create_dataloader_rejects_conflicting_action_chunk_configuration(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     metadata = _metadata_with_local_data(tmp_path)
     _patch_factory_dependencies(monkeypatch, metadata)
 
-    with pytest.raises(ValueError, match="default backend does not support action_chunk_size"):
+    with pytest.raises(ValueError, match="Ambiguous action chunk configuration"):
         create_dataloader(
             DataConfig(
                 repo_id="dummy/repo",
                 root=metadata.root,
                 backend="default",
                 action_chunk_size=2,
+                delta_timestamps={"action": [0.0]},
+                normalize=False,
                 num_workers=0,
             )
         )

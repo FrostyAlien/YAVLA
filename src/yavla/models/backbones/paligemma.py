@@ -43,7 +43,8 @@ class PaliGemmaVisionEncoder(VisionEncoderBase):
         for name, pixel_values in zip(ordered_cams, pixel_values_list, strict=True):
             if pixel_values.shape != expected_shape:
                 raise ValueError(
-                    f"Mismatched camera tensor shapes: '{name}' has {tuple(pixel_values.shape)} but expected {tuple(expected_shape)}"
+                    f"Mismatched camera tensor shapes: '{name}' has {tuple(pixel_values.shape)} "
+                    f"but expected {tuple(expected_shape)}"
                 )
 
         # Flatten cameras into the batch dimension for a single forward call:

@@ -24,7 +24,7 @@ dataloader = create_dataloader(config)
 
 ### `default`
 
-Wraps the upstream `LeRobotDataset` (HuggingFace Arrow-backed). Loads the full dataset into memory-mapped Arrow tables at init. Supports `delta_timestamps` and all standard LeRobot features.
+Wraps the upstream `LeRobotDataset` (HuggingFace Arrow-backed). Loads the full dataset into memory-mapped Arrow tables at init. Supports `delta_timestamps` and `action_chunk_size` (delegated to upstream `delta_timestamps["action"]`) and all standard LeRobot features.
 
 Best for small-to-medium datasets where the full Arrow table fits comfortably in memory.
 
