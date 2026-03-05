@@ -4,7 +4,8 @@ YAVLA represents vision input as `ObservationBatch.images: dict[str, Tensor]` wh
 
 - `PaliGemmaVisionEncoder.encode_images()` raises for `len(images) > 1`
 
-This blocks the first full end-to-end training run on real LeRobot datasets like `lerobot/aloha_sim`, which commonly include multiple cameras.
+This blocks the first full end-to-end training run on real LeRobot datasets like `lerobot/aloha_mobile_cabinet`, which
+commonly include multiple cameras.
 
 The intended multi-camera behavior is:
 
@@ -42,7 +43,16 @@ The intended multi-camera behavior is:
 
 This keeps the merger and backbone interfaces unchanged (they already accept variable-length `N_img`).
 
-**Alternative considered**: Pool/average camera features into a single `N_patch` set. Rejected for v1 because it discards information and complicates later extensions (camera-specific reasoning, attention across views).
+**Prior art**: This is a common multi-image / multi-view pattern: represent each view as a block of visual tokens and concatenate (or interleave) those blocks in a single transformer context so self-attention can fuse views:
+- VLMs trained for multi-image/video interleaving (concatenating per-image token blocks at `<image>` positions): [LLaVA-NeXT-Interleave](https://arxiv.org/abs/2407.07895)
+- Robot policies that concatenate per-view visual token sequences (multi-camera) into one transformer input: [Octo](https://arxiv.org/abs/2405.12213), [ACT / ALOHA](https://arxiv.org/abs/2304.13705)
+
+**Other approaches (not chosen for v1)**:
+- **Per-image cross-attention with masking**: keep per-image token blocks but restrict cross-attention to specific image blocks (e.g., “most recent image”) to control compute and reduce ambiguity: [Flamingo](https://arxiv.org/abs/2204.14198)
+- **Token compression per view** (e.g., fixed learned query tokens) before fusion to limit context growth: [BLIP-2 (Q-Former)](https://arxiv.org/abs/2301.12597)
+- **Learned cross-view fusion modules** (reweight / select features across views instead of pure concat): [BFA (Best-Feature-Aware Fusion)](https://arxiv.org/abs/2502.11161)
+- **View/camera embeddings + attention-based fusion** (explicitly encode view identity and fuse via transformer attention): e.g., [Multi-View 3D Reconstruction with Transformers](https://openaccess.thecvf.com/content/ICCV2021/papers/Wang_Multi-View_3D_Reconstruction_With_Transformers_ICCV_2021_paper.pdf)
+- **Early fusion via spatial tiling/stitching** (combine multiple views into a single image before encoding), used in some multi-image tasks but typically loses per-view resolution and complicates geometry: e.g., [BLIP2IDC](https://arxiv.org/abs/2412.15939)
 
 ### D2: Make camera ordering deterministic by canonicalizing keys inside the vision encoder
 

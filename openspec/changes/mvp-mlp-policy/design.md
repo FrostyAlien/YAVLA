@@ -66,7 +66,11 @@ Reference implementations (with verified source URLs):
 
 **Token ordering:** `[image_tokens | proprio_token | language_tokens | readout_tokens]`. Readout tokens MUST be at the END so causal attention naturally gives them visibility into all prior tokens while preventing prior tokens from attending to readouts (Octo's isolation property for free). See Octo analysis in [octo_module.py#L257-L262](https://github.com/octo-models/octo/blob/241fb351/octo/model/octo_module.py#L257-L262).
 
-**Why not Perceiver:** Same as before — MVP uses single camera, sequence length is manageable (~341 tokens).
+**Why not Perceiver:** MVP MUST support multi-camera datasets. For v1, we represent multi-camera input as
+concatenated per-camera patch tokens, so the vision sequence length scales linearly with the number of cameras.
+This is the simplest end-to-end baseline and matches common VLA practice (encode each view, then fuse in the backbone).
+If sequence length becomes a bottleneck (more cameras or higher resolution), a Perceiver resampler is a post-MVP
+optimization.
 
 ### D5: PaliGemma's Gemma LM as backbone, readout tokens at sequence end
 
@@ -175,7 +179,10 @@ class FreezeConfig:
 
 **[Readout tokens may not extract enough information for precise manipulation]** → Octo demonstrates readout tokens work for diffusion heads. For MLP regression, the information bottleneck may be tighter. Mitigation: make `num_readout_tokens` configurable (default 64, can increase). If readout mode proves insufficient, joint-token mode is the post-MVP upgrade.
 
-**[No Perceiver resampler means long sequences with multi-view cameras]** → MVP uses single camera at 224×224 = 256 vision tokens. With proprio (1 token) + language (~20 tokens) + readout (64 tokens) = ~341 total tokens. PaliGemma handles this easily. Multi-view is post-MVP.
+**[No Perceiver resampler means long sequences with multi-view cameras]** → MVP supports multi-camera by
+concatenating per-camera patch tokens, so `N_img` grows linearly with the number of cameras. This increases VRAM
+and runtime. Mitigation: keep v1 targeted at typical ALOHA-style camera counts (e.g., overhead + two wrists), and
+consider a Perceiver resampler post-MVP if sequence length becomes a limiting factor.
 
 **[MLP regression cannot capture multimodal action distributions]** → Known limitation. MLP averages modes, producing suboptimal actions when multiple valid solutions exist. Acceptable for MVP — flow matching (post-MVP) solves this.
 

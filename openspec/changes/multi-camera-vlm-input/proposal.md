@@ -1,6 +1,9 @@
 ## Why
 
-YAVLA’s training pipeline is intended to run end-to-end on real LeRobot datasets (e.g., `lerobot/aloha_sim`), which commonly provide multiple camera views. Today our PaliGemma vision encoder hard-fails when more than one camera image is present, blocking the first full training run and preventing multi-view policies.
+YAVLA’s training pipeline is intended to run end-to-end on real LeRobot datasets (e.g., `lerobot/aloha_mobile_cabinet`),
+which commonly provide multiple camera views (e.g., `cam_high`, `cam_left_wrist`, `cam_right_wrist`). Today our
+PaliGemma vision encoder hard-fails when more than one camera image is present, blocking the first full training run
+and preventing multi-view policies.
 
 ## What Changes
 

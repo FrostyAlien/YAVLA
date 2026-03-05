@@ -30,7 +30,12 @@
 ## 4. Vision Encoder
 
 - [x] 4.1 Implement `VisionEncoderConfig` dataclass in `src/yavla/models/encoders/vision.py`
-- [x] 4.2 Implement `PaliGemmaVisionEncoder(VisionEncoderBase)` — holds reference to backbone's unwrapped `base_model` (NOT PeftModel wrapper, NOT its own copy), calls `base_model.get_image_features(pixel_values)` to get projected+scaled image tokens `[B, num_patches, D]` (returns tensor directly, NOT a dict). Do NOT rescale. NOT frozen by default — freeze controlled by `FreezeConfig`. MVP supports single-camera only; raise `ValueError` if more than one camera key is provided.
+- [x] 4.2 Implement `PaliGemmaVisionEncoder(VisionEncoderBase)` — holds reference to backbone's unwrapped `base_model`
+  (NOT PeftModel wrapper, NOT its own copy) and calls `base_model.get_image_features(pixel_values)` to get
+  projected+scaled image tokens `[B, num_patches, D]` (returns tensor directly, NOT a dict). Do NOT rescale. NOT
+  frozen by default — freeze controlled by `FreezeConfig`. MVP MUST support 1+ cameras (deterministic ordering via
+  `sorted(images.keys())`, concatenated patch tokens `[B, K*num_patches, D]`; empty/mismatched inputs rejected) —
+  implemented by the `multi-camera-vlm-input` change.
   <!-- Ref: PaliGemma get_image_features returns projected+scaled tensor directly: https://github.com/huggingface/transformers/blob/556312cd/src/transformers/models/paligemma/modeling_paligemma.py#L92-L100
        Ref: π0 reuses PaliGemma's SigLIP: https://github.com/Physical-Intelligence/openpi/blob/981483dc/src/openpi/models/pi0.py#L108-L130 -->
 - [x] 4.3 Register `PaliGemmaVisionEncoder` with `vision_registry`
@@ -111,4 +116,3 @@
 - [x] 11.1 Add `tests/models/test_policy_serialization.py` — round-trip tests for `_tensor_to_list`, `_dict_to_config`, checkpoint file outputs, metadata, `_has_lora`
 - [x] 11.2 Add `PolicyBase` enforcement tests — `test_missing_name_raises`, `test_missing_config_class_raises`
 - [x] 11.3 Add `VLAPolicy` hierarchy tests — `test_is_policy_base`, `test_has_overridable_steps`, `test_reset_is_noop`, `test_name_and_config_class`
-
