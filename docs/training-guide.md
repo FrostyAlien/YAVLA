@@ -77,6 +77,9 @@ tyro naming conventions:
 | `resume` | `bool` | `False` | Resume from latest checkpoint in `output_dir` |
 | `gradient_checkpointing` | `bool` | `True` | Enable activation checkpointing to save VRAM |
 | `use_policy_preset` | `bool` | `True` | Merge policy-provided optimizer presets |
+| `vlm_image_resize_strategy` | `"warp" \| "letterbox"` | `"warp"` | SigLIP image resize strategy used when auto-wiring preprocessing (`dataset.image_transforms=null`) |
+| `vlm_image_height_override` | `int \| None` | `None` | Override SigLIP target height (must set with `vlm_image_width_override`) |
+| `vlm_image_width_override` | `int \| None` | `None` | Override SigLIP target width (must set with `vlm_image_height_override`) |
 | `wandb` | `bool` | `False` | Enable Weights & Biases logging |
 | `gradient_accumulation_steps` | `int` | `1` | Micro-batches per optimizer step |
 
@@ -137,6 +140,17 @@ To enable chunked action targets (required by `TrainingCollate`), set `dataset.a
 The transform pipeline applies in order: repack → normalize → image transforms.
 
 For full `DataConfig` reference and recipes, see [Dataset Layer Usage](dataset-layer/usage.md).
+
+### SigLIP preprocessing precedence
+
+When training SigLIP-based backbones (e.g., PaliGemma), `scripts/train.py` auto-wires a canonical image preprocessing
+recipe into `training.dataset.image_transforms` **only** when `dataset.image_transforms` is omitted / `null`.
+
+Precedence:
+- If `training.dataset.image_transforms` is provided (including `[]`), it is used as-is and `vlm_image_resize_strategy`
+  is ignored.
+- If `training.dataset.image_transforms` is `null`, the wired resize step is selected by `vlm_image_resize_strategy`
+  (`warp` or `letterbox`) and followed by SigLIP normalization.
 
 ### Multi-camera images
 
@@ -371,6 +385,7 @@ output_dir: "outputs/train"
 resume: false
 gradient_checkpointing: true
 use_policy_preset: true
+vlm_image_resize_strategy: "warp"      # "warp" | "letterbox"
 vlm_image_height_override: null        # set both height+width to override VLM resize target
 vlm_image_width_override: null
 wandb: false

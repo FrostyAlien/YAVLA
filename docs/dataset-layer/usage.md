@@ -94,14 +94,24 @@ dataset:
 
 SigLIP/PaliGemma expects dataset-layer preprocessed `pixel_values` (no model-internal processor). The canonical recipe is:
 
-- `Resize([H, W], 3)`
+- One resize step:
+  - `Resize([H, W], 3)` *(warp; distorts aspect ratio)*
+  - `LetterboxPad([H, W], 3)` *(letterbox; resize-to-fit + symmetric pad)*
 - `Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))`
 
 Use the list form for resize (`[H, W]`) to avoid tuple-parsing pitfalls.
 
 When training SigLIP/PaliGemma backbones, `scripts/train.py` auto-wires this recipe when `image_transforms` is
-omitted / `null`. Set `image_transforms: []` to explicitly disable preprocessing, or provide a non-empty list
-to take full control.
+omitted / `null`. The resize step is selected by `vlm_image_resize_strategy`:
+
+- `warp` → `Resize([H, W], 3)` (default; warps aspect ratio)
+- `letterbox` → `LetterboxPad([H, W], 3)` (resize-to-fit + symmetric pad)
+
+Set `image_transforms: []` to explicitly disable preprocessing, or provide a non-empty list to take full control.
+If you provide `image_transforms`, auto-wiring is disabled (and `vlm_image_resize_strategy` is ignored).
+
+Padding fill behavior: the letterbox strategy fills padded pixels with value **0.5** in `[0, 1]` space so that after
+SigLIP normalization (`mean=std=0.5`) those regions become approximately **0.0**.
 
 To override the default checkpoint-derived resize target, set both `vlm_image_height_override` and
 `vlm_image_width_override` in the training config. If the override differs from the checkpoint size, training

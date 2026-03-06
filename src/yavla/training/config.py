@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 from yavla.data.factory import DataConfig
 from yavla.visualization.config import VizConfig
+
+VLMImageResizeStrategy = Literal["warp", "letterbox"]
 
 
 @dataclass(slots=True)
@@ -46,6 +49,7 @@ class TrainingConfig:
     resume: bool = False
     gradient_checkpointing: bool = True
     use_policy_preset: bool = True
+    vlm_image_resize_strategy: VLMImageResizeStrategy = "warp"
     vlm_image_height_override: int | None = None
     vlm_image_width_override: int | None = None
     wandb: bool = False

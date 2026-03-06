@@ -34,5 +34,9 @@ output_dir: "outputs/train"
 resume: false
 gradient_checkpointing: true
 use_policy_preset: true
+
+# SigLIP (PaliGemma) image preprocessing (only used when dataset.image_transforms is null)
+vlm_image_resize_strategy: "warp"  # alternatives: "letterbox"
+
 wandb: false
 gradient_accumulation_steps: 1

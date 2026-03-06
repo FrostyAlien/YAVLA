@@ -13,8 +13,7 @@ Let `(H, W)` be the *effective* preprocessing resize target used for SigLIP prep
 Let `resize_strategy` be the configured SigLIP image resize strategy. The pipeline MUST support at least the following strategies:
 
 - `warp`: resize directly to `HxW` with bicubic interpolation (config transform spec: `Resize([H, W], 3)`).
-- `openvla_letterbox`: preserve aspect ratio by resizing to fit within `HxW` (bicubic) and then padding to exactly `HxW` (config transform spec: `LetterboxPad([H, W], 3)`).
-- `openpi_resize_with_pad`: preserve aspect ratio by resizing to fit within `HxW` and then padding to exactly `HxW`, following the OpenPI reference semantics (config transform spec: `ResizeWithPad([H, W], 3)`).
+- `letterbox`: preserve aspect ratio by resizing to fit within `HxW` (bicubic) and then padding symmetrically to exactly `HxW` (config transform spec: `LetterboxPad([H, W], 3)`).
 
 In config transform strings, `H`/`W` are placeholders for those concrete integer values.
 
@@ -41,15 +40,9 @@ For each *per-sample* camera tensor produced by the dataset pipeline, the prepro
 - **THEN** the output camera tensor SHALL have shape `[3, 224, 224]`, dtype `float32`
 - **AND** the output camera tensor SHALL include padded pixels with values approximately `0.0` after normalization
 
-#### Scenario: SigLIP preprocessing on float images (resize-with-pad)
-- **WHEN** a dataset sample contains a camera tensor with dtype `float32` and values in `[0, 1]`, and the configured image transforms include `ResizeWithPad([224, 224], 3)` followed by `Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))`
-- **AND** the input camera tensor has shape `[3, 300, 450]` (3:2 aspect ratio)
-- **THEN** the output camera tensor SHALL have shape `[3, 224, 224]`, dtype `float32`
-- **AND** the output camera tensor SHALL include padded pixels with values approximately `0.0` after normalization
-
 #### Scenario: SigLIP preprocessing on uint8 images (all strategies)
 - **WHEN** a dataset sample contains a camera tensor with dtype `uint8` and values in `[0, 255]`
-- **AND** the configured image transforms include one of `Resize([H, W], 3)`, `LetterboxPad([H, W], 3)`, or `ResizeWithPad([H, W], 3)`, followed by `Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))`
+- **AND** the configured image transforms include one of `Resize([H, W], 3)` or `LetterboxPad([H, W], 3)`, followed by `Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))`
 - **THEN** the transform pipeline SHALL NOT error, and the output camera tensor SHALL have shape `[3, H, W]`, dtype `float32`, and values approximately within `[-1.05, 1.05]`
 
 ### Requirement: Training entrypoint keeps preprocessing aligned with checkpoint expected image size
@@ -70,17 +63,11 @@ If a training-time size override is configured (both height and width), the trai
 - **AND** no size override is configured
 - **THEN** the training entrypoint SHALL wire the canonical SigLIP preprocessing transform list using `Resize([S_ckpt, S_ckpt], 3)` + `Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))`
 
-#### Scenario: Auto-wire preprocessing when unset (OpenVLA letterbox)
+#### Scenario: Auto-wire preprocessing when unset (letterbox)
 - **WHEN** the selected backbone checkpoint expects `S_ckpt`
 - **AND** `DataConfig.image_transforms is None`
-- **AND** `TrainingConfig.vlm_image_resize_strategy == "openvla_letterbox"`
+- **AND** `TrainingConfig.vlm_image_resize_strategy == "letterbox"`
 - **THEN** the training entrypoint SHALL wire the canonical SigLIP preprocessing transform list using `LetterboxPad([S_ckpt, S_ckpt], 3)` + `Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))`
-
-#### Scenario: Auto-wire preprocessing when unset (OpenPI resize-with-pad)
-- **WHEN** the selected backbone checkpoint expects `S_ckpt`
-- **AND** `DataConfig.image_transforms is None`
-- **AND** `TrainingConfig.vlm_image_resize_strategy == "openpi_resize_with_pad"`
-- **THEN** the training entrypoint SHALL wire the canonical SigLIP preprocessing transform list using `ResizeWithPad([S_ckpt, S_ckpt], 3)` + `Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))`
 
 #### Scenario: Auto-wire preprocessing with override (warning-only)
 - **WHEN** the selected backbone checkpoint expects `S_ckpt` and `DataConfig.image_transforms is None`

@@ -14,15 +14,37 @@ from yavla.training.config import TrainingConfig
 LOGGER = logging.getLogger(__name__)
 
 _SIGLIP_NORMALIZE = "Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))"
+_SIGLIP_RESIZE_STRATEGIES = {"warp", "letterbox"}
 
 
-def build_siglip_image_transform_specs(height: int, width: int) -> list[str]:
+def _validate_siglip_resize_strategy(strategy: str) -> str:
+    if strategy not in _SIGLIP_RESIZE_STRATEGIES:
+        allowed = "|".join(sorted(_SIGLIP_RESIZE_STRATEGIES))
+        raise ValueError(f"Unknown vlm_image_resize_strategy={strategy!r}; allowed: {allowed}")
+    return strategy
+
+
+def build_siglip_image_transform_specs(
+    height: int,
+    width: int,
+    *,
+    resize_strategy: str = "warp",
+) -> list[str]:
     """Return the canonical SigLIP transform list for a target ``(H, W)`` size."""
 
     if height <= 0 or width <= 0:
         raise ValueError(f"SigLIP image size must be positive, got (H, W)=({height}, {width})")
+    resize_strategy = _validate_siglip_resize_strategy(resize_strategy)
+
+    if resize_strategy == "warp":
+        resize_spec = f"Resize([{height}, {width}], 3)"
+    elif resize_strategy == "letterbox":
+        resize_spec = f"LetterboxPad([{height}, {width}], 3)"
+    else:  # pragma: no cover
+        raise AssertionError(f"Unhandled resize strategy: {resize_strategy}")
+
     return [
-        f"Resize([{height}, {width}], 3)",
+        resize_spec,
         _SIGLIP_NORMALIZE,
     ]
 
@@ -76,6 +98,7 @@ def autowire_siglip_image_transforms(
 
     height, width = resolve_siglip_target_size(training, ckpt_image_size=ckpt_image_size)
     override_active = training.vlm_image_height_override is not None
+    resize_strategy = _validate_siglip_resize_strategy(training.vlm_image_resize_strategy)
 
     image_transforms = training.dataset.image_transforms
     if image_transforms is None:
@@ -88,7 +111,11 @@ def autowire_siglip_image_transforms(
                 height,
                 width,
             )
-        training.dataset.image_transforms = build_siglip_image_transform_specs(height, width)
+        training.dataset.image_transforms = build_siglip_image_transform_specs(
+            height,
+            width,
+            resize_strategy=resize_strategy,
+        )
         return
 
     if override_active:
@@ -97,4 +124,11 @@ def autowire_siglip_image_transforms(
             "override will not be auto-wired.",
             height,
             width,
+        )
+
+    if resize_strategy != "warp":
+        LOGGER.warning(
+            "vlm_image_resize_strategy is set to %r but dataset.image_transforms is explicitly set; "
+            "strategy will not be auto-wired.",
+            resize_strategy,
         )

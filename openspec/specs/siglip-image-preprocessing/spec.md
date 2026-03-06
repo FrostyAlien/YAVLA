@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: SigLIP image preprocessing contract (model-derived size) for camera tensors
-The data pipeline SHALL support a SigLIP-style image preprocessing contract suitable for SigLIP-based vision towers (including PaliGemma).
+The data pipeline SHALL support a SigLIP-style image preprocessing contract suitable for SigLIP-based vision towers (including PaliGemma), producing fixed-size `pixel_values` while supporting multiple resize strategies.
 
 Let `S_ckpt` be the expected image size declared by the selected backbone checkpoint, sourced from the loaded checkpoint config (for PaliGemma, `vision_config.image_size`). `S_ckpt` is a single integer and implies a square checkpoint expectation of `(S_ckpt, S_ckpt)`.
 
@@ -10,26 +10,39 @@ Let `(H, W)` be the *effective* preprocessing resize target used for SigLIP prep
 - By default: `H = S_ckpt` and `W = S_ckpt`
 - If `TrainingConfig.vlm_image_height_override` and `TrainingConfig.vlm_image_width_override` are both set: `H = vlm_image_height_override`, `W = vlm_image_width_override`
 
+Let `resize_strategy` be the configured SigLIP image resize strategy. The pipeline MUST support at least the following strategies:
+
+- `warp`: resize directly to `HxW` with bicubic interpolation (config transform spec: `Resize([H, W], 3)`).
+- `letterbox`: preserve aspect ratio by resizing to fit within `HxW` (bicubic) and then padding symmetrically to exactly `HxW` (config transform spec: `LetterboxPad([H, W], 3)`).
+
 In config transform strings, `H`/`W` are placeholders for those concrete integer values.
 
 For each *per-sample* camera tensor produced by the dataset pipeline, the preprocessing output SHALL be:
 
 - channel-first with 3 channels (`[3, H, W]`) (collates to `[B, 3, H, W]` as model input)
 - dtype `float32`
-- resized to exactly `HxW` using bicubic interpolation (in our torchvision v2 transform specs, `Resize([H, W], 3)` uses bicubic; `3` corresponds to bicubic)
+- resized/padded to exactly `HxW` according to the selected `resize_strategy` (the resize step SHALL use bicubic interpolation)
+- if padding is applied, padded pixels SHALL correspond to value `0.5` per channel in `[0, 1]` space before normalization (so they normalize to approximately `0.0`)
 - normalized with `mean=(0.5, 0.5, 0.5)` and `std=(0.5, 0.5, 0.5)` (mapping `[0, 1]` to approximately `[-1, 1]`)
 
-#### Scenario: SigLIP preprocessing on float images
+#### Scenario: SigLIP preprocessing on float images (warp)
 - **WHEN** a dataset sample contains a camera tensor with dtype `float32` and values in `[0, 1]`, and the configured image transforms include `Resize([224, 224], 3)` followed by `Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))`
 - **AND** the selected backbone checkpoint expects `S_ckpt=224`
 - **THEN** the output camera tensor SHALL have shape `[3, 224, 224]`, dtype `float32`, and values approximately within `[-1.05, 1.05]`
 
-#### Scenario: SigLIP preprocessing on float images (general `H`, `W`)
+#### Scenario: SigLIP preprocessing on float images (general `H`, `W`) (warp)
 - **WHEN** a dataset sample contains a camera tensor with dtype `float32` and values in `[0, 1]`, and the configured image transforms include `Resize([H, W], 3)` followed by `Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))`
 - **THEN** the output camera tensor SHALL have shape `[3, H, W]`, dtype `float32`, and values approximately within `[-1.05, 1.05]`
 
-#### Scenario: SigLIP preprocessing on uint8 images
-- **WHEN** a dataset sample contains a camera tensor with dtype `uint8` and values in `[0, 255]`, and the configured image transforms include `Resize([H, W], 3)` followed by `Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))`
+#### Scenario: SigLIP preprocessing on float images (letterbox)
+- **WHEN** a dataset sample contains a camera tensor with dtype `float32` and values in `[0, 1]`, and the configured image transforms include `LetterboxPad([224, 224], 3)` followed by `Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))`
+- **AND** the input camera tensor has shape `[3, 300, 450]` (3:2 aspect ratio)
+- **THEN** the output camera tensor SHALL have shape `[3, 224, 224]`, dtype `float32`
+- **AND** the output camera tensor SHALL include padded pixels with values approximately `0.0` after normalization
+
+#### Scenario: SigLIP preprocessing on uint8 images (all strategies)
+- **WHEN** a dataset sample contains a camera tensor with dtype `uint8` and values in `[0, 255]`
+- **AND** the configured image transforms include one of `Resize([H, W], 3)` or `LetterboxPad([H, W], 3)`, followed by `Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))`
 - **THEN** the transform pipeline SHALL NOT error, and the output camera tensor SHALL have shape `[3, H, W]`, dtype `float32`, and values approximately within `[-1.05, 1.05]`
 
 ### Requirement: Preprocessing occurs before the model forward pass
@@ -42,16 +55,31 @@ SigLIP image preprocessing (resize + normalization) SHALL occur in the dataset/d
 ### Requirement: Training entrypoint keeps preprocessing aligned with checkpoint expected image size
 The training entrypoint SHALL keep dataset image preprocessing aligned with the selected SigLIP-based backbone checkpoint image size.
 The checkpoint-declared expected size `S_ckpt` SHALL be derived from the loaded checkpoint config and MUST NOT be inferred by parsing `vlm_name` / model-id strings.
-If a training-time size override is configured (both height and width), the training entrypoint SHALL use that override as the effective resize target `(H, W)` for auto-wiring and SHALL log a warning that the checkpoint-declared size is being overridden. If `(H, W) != (S_ckpt, S_ckpt)`, the warning SHOULD include both values.
 
-#### Scenario: Auto-wire preprocessing when unset
-- **WHEN** the selected backbone checkpoint expects `S_ckpt` and `DataConfig.image_transforms is None` and no size override is configured
+Let `(H, W)` be the effective preprocessing size resolved from `S_ckpt` and optional override fields, as defined in the SigLIP preprocessing contract.
+
+Let `resize_strategy` be the SigLIP image resize strategy selected by `TrainingConfig.vlm_image_resize_strategy`. The default strategy SHALL be `warp`.
+If `resize_strategy` is not a supported value, training SHALL fail fast with an error describing the allowed options.
+
+If a training-time size override is configured (both height and width), the training entrypoint SHALL use that override as the effective preprocessing target `(H, W)` for auto-wiring and SHALL log a warning that the checkpoint-declared size is being overridden. If `(H, W) != (S_ckpt, S_ckpt)`, the warning SHOULD include both values.
+
+#### Scenario: Auto-wire preprocessing when unset (warp default)
+- **WHEN** the selected backbone checkpoint expects `S_ckpt`
+- **AND** `DataConfig.image_transforms is None`
+- **AND** `TrainingConfig.vlm_image_resize_strategy` is unset or set to `warp`
+- **AND** no size override is configured
 - **THEN** the training entrypoint SHALL wire the canonical SigLIP preprocessing transform list using `Resize([S_ckpt, S_ckpt], 3)` + `Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))`
+
+#### Scenario: Auto-wire preprocessing when unset (letterbox)
+- **WHEN** the selected backbone checkpoint expects `S_ckpt`
+- **AND** `DataConfig.image_transforms is None`
+- **AND** `TrainingConfig.vlm_image_resize_strategy == "letterbox"`
+- **THEN** the training entrypoint SHALL wire the canonical SigLIP preprocessing transform list using `LetterboxPad([S_ckpt, S_ckpt], 3)` + `Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))`
 
 #### Scenario: Auto-wire preprocessing with override (warning-only)
 - **WHEN** the selected backbone checkpoint expects `S_ckpt` and `DataConfig.image_transforms is None`
 - **AND** `TrainingConfig.vlm_image_height_override` and `TrainingConfig.vlm_image_width_override` are set to `(H, W)`
-- **THEN** the training entrypoint SHALL wire the canonical SigLIP preprocessing transform list using `Resize([H, W], 3)` + `Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))`
+- **THEN** the training entrypoint SHALL wire the canonical SigLIP preprocessing transform list using the configured `resize_strategy` at size `(H, W)` followed by `Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))`
 - **AND** the training entrypoint SHALL log a warning that the checkpoint-declared size is being overridden and that the user is responsible for verifying VLM compatibility
 
 #### Scenario: Explicitly disabling preprocessing is respected

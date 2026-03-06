@@ -93,6 +93,14 @@ def test_image_transform_uint8_is_coerced_before_torchvision_normalize() -> None
     assert image.dtype == torch.float32
 
 
+def test_build_torchvision_transforms_supports_siglip_letterbox_transform() -> None:
+    transforms = build_torchvision_transforms(["LetterboxPad([224, 224], 3)"])
+    assert len(transforms) == 1
+    out = transforms[0](torch.rand(3, 12, 20))
+    assert isinstance(out, torch.Tensor)
+    assert out.shape == (3, 224, 224)
+
+
 @pytest.mark.parametrize("target_hw", [(224, 224), (448, 448)])
 def test_siglip_transform_recipe_shape_dtype_and_range(target_hw: tuple[int, int]) -> None:
     height, width = target_hw
@@ -116,3 +124,30 @@ def test_siglip_transform_recipe_shape_dtype_and_range(target_hw: tuple[int, int
     assert image.dtype == torch.float32
     assert float(image.min()) >= -1.05
     assert float(image.max()) <= 1.05
+
+
+def test_siglip_letterbox_shape_dtype_range_and_padding() -> None:
+    height, width = 224, 224
+    transforms = build_torchvision_transforms(
+        [
+            "LetterboxPad([224, 224], 3)",
+            "Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))",
+        ]
+    )
+    image_transform = ImageTransform(transforms=transforms, camera_keys=["image"])
+    base_h, base_w = 300, 450  # 3:2 aspect ratio
+    yy = torch.linspace(0, 1, base_h).view(1, base_h, 1)
+    xx = torch.linspace(0, 1, base_w).view(1, 1, base_w)
+    image_u8 = ((yy * 0.7 + xx * 0.3).clamp(0, 1).repeat(3, 1, 1) * 255).round().to(torch.uint8)
+
+    transformed = image_transform({"image": image_u8})
+    image = transformed["image"]
+    assert isinstance(image, torch.Tensor)
+    assert image.shape == (3, height, width)
+    assert image.dtype == torch.float32
+    assert float(image.min()) >= -1.05
+    assert float(image.max()) <= 1.05
+
+    top_border = image[:, 0, :]
+    assert torch.allclose(top_border, torch.zeros_like(top_border), atol=1e-6)
+    assert torch.count_nonzero(image[:, height // 2, :]) > 0

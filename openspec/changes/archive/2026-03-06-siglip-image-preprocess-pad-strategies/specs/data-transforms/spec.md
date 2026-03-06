@@ -28,18 +28,13 @@ The transform system SHALL support config-driven image transforms sufficient to 
 At minimum, the following transform specifications SHALL be accepted and built into usable transform callables:
 
 - `Resize([H, W], 3)` (bicubic warp to fixed size)
-- `LetterboxPad([H, W], 3)` (OpenVLA-style aspect-ratio-preserving resize-to-fit + pad)
-- `ResizeWithPad([H, W], 3)` (OpenPI-style resize-with-pad)
+- `LetterboxPad([H, W], 3)` (aspect-ratio-preserving resize-to-fit + symmetric pad)
 - `Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))`
 
 #### Scenario: Canonical SigLIP transform list builds successfully (warp)
 - **WHEN** `build_torchvision_transforms(["Resize([H, W], 3)", "Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))"])` is called for some integers `H`, `W`
 - **THEN** it SHALL return a list of callables that can be applied sequentially to camera tensors without error
 
-#### Scenario: Canonical SigLIP transform list builds successfully (OpenVLA letterbox)
+#### Scenario: Canonical SigLIP transform list builds successfully (letterbox)
 - **WHEN** `build_torchvision_transforms(["LetterboxPad([H, W], 3)", "Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))"])` is called for some integers `H`, `W`
-- **THEN** it SHALL return a list of callables that can be applied sequentially to camera tensors without error
-
-#### Scenario: Canonical SigLIP transform list builds successfully (OpenPI resize-with-pad)
-- **WHEN** `build_torchvision_transforms(["ResizeWithPad([H, W], 3)", "Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))"])` is called for some integers `H`, `W`
 - **THEN** it SHALL return a list of callables that can be applied sequentially to camera tensors without error
