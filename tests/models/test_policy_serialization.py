@@ -13,6 +13,7 @@ import torch
 from yavla.models.config import PolicyConfig
 from yavla.models.decoder import SimpleActionDecoder
 from yavla.models.encoders.proprio import ProprioEncoder, ProprioEncoderConfig
+from yavla.models.encoders.vision import MultiTowerVisionEncoderConfig, SimplePatchVisionEncoderConfig
 from yavla.models.heads.mlp import MLPHeadConfig, MLPRegressionHead
 from yavla.models.merger import ConcatMerger, TokenMergerConfig
 from yavla.models.policy import VLAPolicy, _dict_to_config, _filter_known_fields, _tensor_to_list
@@ -93,6 +94,7 @@ class TestDictToConfig:
         cfg = _dict_to_config({})
         assert cfg.config_version == "1.0"
         assert cfg.dt_hz == 10.0
+        assert cfg.vision_encoder.type == "from_backbone"
 
     def test_roundtrip(self) -> None:
         """Config → dict → Config should preserve values."""
@@ -140,6 +142,23 @@ class TestDictToConfig:
             _dict_to_config(d)
         assert "unknown_key" in caplog.text
         assert "BackboneConfig" in caplog.text
+
+    def test_roundtrip_multi_tower_vision_config(self) -> None:
+        import dataclasses
+
+        original = PolicyConfig(
+            vision_encoder=MultiTowerVisionEncoderConfig(
+                towers=[
+                    SimplePatchVisionEncoderConfig(image_size=32, patch_size=16, hidden_dim=8),
+                    SimplePatchVisionEncoderConfig(image_size=32, patch_size=16, hidden_dim=12),
+                ]
+            )
+        )
+        d = dataclasses.asdict(original)
+        restored = _dict_to_config(d)
+        assert isinstance(restored.vision_encoder, MultiTowerVisionEncoderConfig)
+        assert len(restored.vision_encoder.towers) == 2
+        assert isinstance(restored.vision_encoder.towers[0], SimplePatchVisionEncoderConfig)
 
 
 class TestFilterKnownFields:

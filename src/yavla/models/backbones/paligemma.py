@@ -7,6 +7,7 @@ from typing import Any
 import torch
 from torch import Tensor
 
+from yavla.models.encoders.vision import _flatten_camera_images, _restore_camera_tokens
 from yavla.models.protocols import BackboneBase, BackboneCapabilities, IntegrationMode, VisionEncoderBase
 from yavla.models.types import BackboneOutput, FreezeConfig
 from yavla.models.vlm_registry import vlm_registry
@@ -29,33 +30,11 @@ class PaliGemmaVisionEncoder(VisionEncoderBase):
         return (img_size // patch_size) ** 2
 
     def encode_images(self, images: dict[str, Tensor]) -> Tensor:
-        if len(images) == 0:
-            raise ValueError("No camera images provided")
-
-        ordered_cams = sorted(images.keys())
-        pixel_values_list = [images[name] for name in ordered_cams]
-
-        expected_shape = pixel_values_list[0].shape
-        if len(expected_shape) != 4:
-            raise ValueError(
-                f"Camera tensor must have shape [B, C, H, W], got {tuple(expected_shape)} for '{ordered_cams[0]}'"
-            )
-        for name, pixel_values in zip(ordered_cams, pixel_values_list, strict=True):
-            if pixel_values.shape != expected_shape:
-                raise ValueError(
-                    f"Mismatched camera tensor shapes: '{name}' has {tuple(pixel_values.shape)} "
-                    f"but expected {tuple(expected_shape)}"
-                )
-
         # Flatten cameras into the batch dimension for a single forward call:
         # [K, B, C, H, W] -> [K*B, C, H, W] -> [K*B, N_patch, D] -> [B, K*N_patch, D]
-        stacked = torch.stack(pixel_values_list, dim=0)
-        num_cams, batch_size, channels, height, width = stacked.shape
-        flat = stacked.reshape(num_cams * batch_size, channels, height, width)
+        flat, num_cams = _flatten_camera_images(images)
         features: Tensor = self._base_model.get_image_features(flat)
-        features = features.reshape(num_cams, batch_size, features.shape[1], features.shape[2])
-        result = features.permute(1, 0, 2, 3).reshape(batch_size, num_cams * features.shape[2], features.shape[3])
-        return result
+        return _restore_camera_tokens(features, num_cams)
 
 
 class PaliGemmaBackbone(BackboneBase):

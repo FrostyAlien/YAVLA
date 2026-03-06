@@ -9,6 +9,13 @@ import torch
 from torch import Tensor
 
 from yavla.models.backbones.paligemma import PaliGemmaVisionEncoder
+from yavla.models.encoders.vision import (
+    MultiTowerVisionEncoderConfig,
+    SimplePatchVisionEncoder,
+    SimplePatchVisionEncoderConfig,
+    VisionEncoderConfig,
+    vision_registry,
+)
 from yavla.models.encoders.proprio import ProprioEncoder, ProprioEncoderConfig, proprio_registry
 from yavla.models.protocols import ProprioEncoderProto, VisionEncoderProto
 
@@ -98,6 +105,99 @@ class TestPaliGemmaVisionEncoder:
             enc.encode_images({})
 
 
+class TestSimplePatchVisionEncoder:
+    def test_encode_multi_camera_scales_tokens(self) -> None:
+        enc = SimplePatchVisionEncoder(SimplePatchVisionEncoderConfig(image_size=32, patch_size=16, hidden_dim=12))
+        out = enc.encode_images(
+            {
+                "cam0": torch.randn(2, 3, 32, 32),
+                "cam1": torch.randn(2, 3, 32, 32),
+            }
+        )
+        assert out.shape == (2, 8, 12)
+
+    def test_multi_camera_ordering_is_deterministic(self) -> None:
+        enc = SimplePatchVisionEncoder(SimplePatchVisionEncoderConfig(image_size=32, patch_size=16, hidden_dim=8))
+        cam_a = torch.full((1, 3, 32, 32), 1.0)
+        cam_b = torch.full((1, 3, 32, 32), 2.0)
+        out1 = enc.encode_images({"b": cam_b, "a": cam_a})
+        out2 = enc.encode_images({"a": cam_a, "b": cam_b})
+        assert torch.allclose(out1, out2)
+
+    def test_reject_mismatched_camera_shapes(self) -> None:
+        enc = SimplePatchVisionEncoder(SimplePatchVisionEncoderConfig(image_size=32, patch_size=16, hidden_dim=8))
+        with pytest.raises(ValueError, match="Mismatched camera tensor shapes"):
+            enc.encode_images(
+                {
+                    "cam0": torch.randn(1, 3, 32, 32),
+                    "cam1": torch.randn(2, 3, 32, 32),
+                }
+            )
+
+    def test_reject_empty_images(self) -> None:
+        enc = SimplePatchVisionEncoder(SimplePatchVisionEncoderConfig(image_size=32, patch_size=16, hidden_dim=8))
+        with pytest.raises(ValueError, match="No camera"):
+            enc.encode_images({})
+
+    def test_registry_default_config(self) -> None:
+        cfg = vision_registry.get_default_config("simple_patch")
+        assert isinstance(cfg, SimplePatchVisionEncoderConfig)
+        assert cfg.type == "simple_patch"
+
+
+class TestMultiTowerVisionEncoder:
+    def test_fuses_towers_and_projects_to_backbone_dim(self) -> None:
+        cfg = MultiTowerVisionEncoderConfig(
+            towers=[
+                SimplePatchVisionEncoderConfig(image_size=32, patch_size=16, hidden_dim=8),
+                SimplePatchVisionEncoderConfig(image_size=32, patch_size=16, hidden_dim=12),
+            ]
+        )
+        enc = vision_registry.build(cfg, backbone_dim=20)
+        out = enc.encode_images(
+            {
+                "cam0": torch.randn(2, 3, 32, 32),
+                "cam1": torch.randn(2, 3, 32, 32),
+            }
+        )
+        assert out.shape == (2, 8, 20)
+        assert enc.output_dim == 20
+
+    def test_patch_count_mismatch_is_rejected(self) -> None:
+        cfg = MultiTowerVisionEncoderConfig(
+            towers=[
+                SimplePatchVisionEncoderConfig(image_size=32, patch_size=16, hidden_dim=8),
+                SimplePatchVisionEncoderConfig(image_size=32, patch_size=8, hidden_dim=12),
+            ]
+        )
+        with pytest.raises(ValueError, match="patch-count mismatch"):
+            vision_registry.build(cfg, backbone_dim=20)
+
+    def test_multi_camera_ordering_is_deterministic(self) -> None:
+        cfg = MultiTowerVisionEncoderConfig(
+            towers=[
+                SimplePatchVisionEncoderConfig(image_size=32, patch_size=16, hidden_dim=8),
+                SimplePatchVisionEncoderConfig(image_size=32, patch_size=16, hidden_dim=12),
+            ]
+        )
+        enc = vision_registry.build(cfg, backbone_dim=20)
+        cam_a = torch.full((1, 3, 32, 32), 1.0)
+        cam_b = torch.full((1, 3, 32, 32), 2.0)
+        out1 = enc.encode_images({"b": cam_b, "a": cam_a})
+        out2 = enc.encode_images({"a": cam_a, "b": cam_b})
+        assert torch.allclose(out1, out2)
+
+    def test_from_backbone_subtower_is_rejected(self) -> None:
+        cfg = MultiTowerVisionEncoderConfig(
+            towers=[
+                VisionEncoderConfig(type="from_backbone"),
+                SimplePatchVisionEncoderConfig(image_size=32, patch_size=16, hidden_dim=8),
+            ]
+        )
+        with pytest.raises(ValueError, match="from_backbone"):
+            vision_registry.build(cfg, backbone_dim=20)
+
+
 class TestProprioEncoder:
     def test_encode_shape(self) -> None:
         cfg = ProprioEncoderConfig(proprio_dim=7, backbone_dim=2048)
@@ -123,3 +223,7 @@ class TestProprioEncoder:
         assert cfg.type == "linear"
         assert cfg.proprio_dim == 7
         assert cfg.backbone_dim == 2048
+
+    def test_vision_registry_lists_new_encoders(self) -> None:
+        assert "multi_tower" in vision_registry.list()
+        assert "simple_patch" in vision_registry.list()

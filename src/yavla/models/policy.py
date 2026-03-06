@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 from typing import Any
@@ -270,14 +271,31 @@ class VLAPolicy(PolicyBase):
 def build_policy(config: PolicyConfig) -> VLAPolicy:
     from yavla.models.decoder import SimpleActionDecoder
     from yavla.models.encoders.proprio import ProprioEncoder, ProprioEncoderConfig
+    from yavla.models.encoders.vision import (
+        ProjectedVisionEncoder,
+        canonicalize_vision_encoder_config,
+        vision_registry,
+    )
     from yavla.models.heads.mlp import MLPRegressionHead
     from yavla.models.merger import ConcatMerger
     from yavla.models.vlm_registry import vlm_registry
 
-    # Build vision encoder + backbone via registry (type-driven dispatch)
-    vision_encoder, backbone = vlm_registry.build(
+    # Build backbone via the VLM registry; its paired vision encoder remains the default.
+    backbone_vision_encoder, backbone = vlm_registry.build(
         config.backbone, config.freeze, config.merger.num_readout_tokens
     )
+    effective_vision_config = canonicalize_vision_encoder_config(config.vision_encoder, warn_on_alias=True)
+    if effective_vision_config.type == "from_backbone":
+        vision_encoder = backbone_vision_encoder
+    else:
+        vision_encoder = vision_registry.build(effective_vision_config, backbone_dim=backbone.hidden_dim)
+        if vision_encoder.output_dim != backbone.hidden_dim:
+            vision_encoder = ProjectedVisionEncoder(vision_encoder, backbone.hidden_dim)
+    if vision_encoder.output_dim != backbone.hidden_dim:
+        raise ValueError(
+            "Vision encoder output_dim must match backbone.hidden_dim, "
+            f"got {vision_encoder.output_dim} vs {backbone.hidden_dim}"
+        )
 
     # Build proprio encoder
     proprio_encoder = ProprioEncoder(
@@ -307,7 +325,7 @@ def build_policy(config: PolicyConfig) -> VLAPolicy:
         backbone=backbone,
         action_head=action_head,
         decoder=decoder,
-        config=config,
+        config=dataclasses.replace(config, vision_encoder=effective_vision_config),
     )
 
 
@@ -350,13 +368,12 @@ def _dict_to_config(d: dict[str, Any]) -> PolicyConfig:
     """
     from yavla.models.config import BackboneConfig
     from yavla.models.encoders.proprio import ProprioEncoderConfig
-    from yavla.models.encoders.vision import VisionEncoderConfig
     from yavla.models.heads.mlp import MLPHeadConfig
     from yavla.models.merger import TokenMergerConfig
     from yavla.models.types import ActionSpaceSpec, FreezeConfig, ProprioSpec
 
     return PolicyConfig(
-        vision_encoder=VisionEncoderConfig(**_filter_known_fields(VisionEncoderConfig, d.get("vision_encoder", {}))),
+        vision_encoder=_dict_to_vision_encoder_config(d.get("vision_encoder", {})),
         proprio_encoder=ProprioEncoderConfig(
             **_filter_known_fields(ProprioEncoderConfig, d.get("proprio_encoder", {}))
         ),
@@ -372,3 +389,12 @@ def _dict_to_config(d: dict[str, Any]) -> PolicyConfig:
         config_version=d.get("config_version", "1.0"),
     )
 
+
+def _dict_to_vision_encoder_config(d: dict[str, Any]) -> Any:
+    from yavla.models.encoders.vision import MultiTowerVisionEncoderConfig, get_vision_config_class
+
+    config_cls = get_vision_config_class(d.get("type"))
+    filtered = _filter_known_fields(config_cls, d)
+    if issubclass(config_cls, MultiTowerVisionEncoderConfig):
+        filtered["towers"] = [_dict_to_vision_encoder_config(tower) for tower in d.get("towers", [])]
+    return config_cls(**filtered)

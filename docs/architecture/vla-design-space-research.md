@@ -1014,17 +1014,24 @@ from dataclasses import dataclass, field
 import tyro
 
 @dataclass
-class VisionTuningConfig:
-    mode: str = "lora_last_k"      # "frozen" | "lora_last_k" | "full"
-    target_blocks: int = 4         # LoRA on last N ViT blocks
-    rank: int = 16                 # LoRA rank
+class VisionEncoderConfig:
+    type: str = "from_backbone"    # "from_backbone" | "simple_patch" | "multi_tower"
+    model_name: str | None = None
+    extract_layer: int = -1
 
 @dataclass
-class VisionEncoderConfig:
-    type: str = "siglip"           # "siglip" | "dinov2" | "dual"
-    model_name: str = "google/siglip-so400m-patch14-384"
-    extract_layer: int = -2        # Second-to-last layer
-    tuning: VisionTuningConfig = field(default_factory=VisionTuningConfig)
+class SimplePatchVisionEncoderConfig(VisionEncoderConfig):
+    type: str = "simple_patch"
+    image_size: int = 224
+    patch_size: int = 16
+    hidden_dim: int = 256
+
+@dataclass
+class MultiTowerVisionEncoderConfig(VisionEncoderConfig):
+    type: str = "multi_tower"
+    towers: list[VisionEncoderConfig] = field(default_factory=list)
+    fusion: str = "concat"
+    projector: str = "linear"
 
 @dataclass
 class TokenMergerConfig:
@@ -1067,15 +1074,45 @@ class FlowMatchingHeadConfig:
 @dataclass
 class PolicyConfig:
     config_version: int = 1        # For migration support
-    vision: VisionEncoderConfig = field(default_factory=VisionEncoderConfig)
+    vision_encoder: VisionEncoderConfig = field(default_factory=VisionEncoderConfig)
     merger: TokenMergerConfig = field(default_factory=TokenMergerConfig)
     backbone: BackboneConfig = field(default_factory=BackboneConfig)
     head: FlowMatchingHeadConfig = field(default_factory=FlowMatchingHeadConfig)
     training: TrainingStrategyConfig = field(default_factory=TrainingStrategyConfig)
 
-# CLI: python train.py --vision.tuning.mode frozen --merger.max-vision-tokens 128
+# CLI: python train.py --vision_encoder.type simple_patch --merger.max_vision_tokens 128
 config = tyro.cli(PolicyConfig)
 ```
+
+The current implementation treats `vision_encoder.type="from_backbone"` as the canonical default: `build_policy()` still builds the VLM backbone through `vlm_registry` and uses the paired vision tower unless the user explicitly selects a registry-backed encoder.
+
+Registry-backed examples:
+
+```yaml
+vision_encoder:
+  type: from_backbone
+
+vision_encoder:
+  type: simple_patch
+  image_size: 224
+  patch_size: 16
+  hidden_dim: 512
+
+vision_encoder:
+  type: multi_tower
+  fusion: concat
+  towers:
+    - type: simple_patch
+      image_size: 224
+      patch_size: 16
+      hidden_dim: 256
+    - type: simple_patch
+      image_size: 224
+      patch_size: 16
+      hidden_dim: 384
+```
+
+For `multi_tower`, all sub-towers must come from `vision_registry` and must agree on per-image patch count. The fused tower output is then projected to `backbone.hidden_dim`, so the merger/backbone interface remains `[B, N_img, D_backbone]`.
 
 #### 7.4.1 Registry Pattern
 

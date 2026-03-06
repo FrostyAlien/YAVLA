@@ -9,6 +9,9 @@ import pytest
 
 from yavla.models.decoder import SimpleActionDecoder
 from yavla.models.config import PolicyConfig
+from yavla.models.encoders.vision import SimplePatchVisionEncoderConfig, VisionEncoderConfig
+from yavla.models.policy import build_policy
+from yavla.models.protocols import BackboneBase, BackboneCapabilities, IntegrationMode, VisionEncoderBase
 from yavla.models.types import (
     ActionChunk,
     ActionPrediction,
@@ -19,6 +22,52 @@ from yavla.models.types import (
     ProprioSpec,
     TrainingBatch,
 )
+
+
+class _StubVisionEncoder(VisionEncoderBase):
+    def __init__(self, output_dim: int = 32, num_patches: int = 4) -> None:
+        super().__init__()
+        self._output_dim = output_dim
+        self._num_patches = num_patches
+
+    @property
+    def output_dim(self) -> int:
+        return self._output_dim
+
+    @property
+    def num_patches(self) -> int:
+        return self._num_patches
+
+    def encode_images(self, images: dict[str, torch.Tensor]) -> torch.Tensor:
+        batch_size = next(iter(images.values())).shape[0]
+        return torch.zeros(batch_size, self._num_patches, self._output_dim)
+
+
+class _StubBackbone(BackboneBase):
+    def __init__(self, hidden_dim: int = 32) -> None:
+        super().__init__()
+        self._hidden_dim = hidden_dim
+
+    @property
+    def capabilities(self) -> BackboneCapabilities:
+        return BackboneCapabilities(supported_modes={IntegrationMode.READOUT})
+
+    @property
+    def hidden_dim(self) -> int:
+        return self._hidden_dim
+
+    def embed_language(self, texts: list[str]) -> tuple[torch.Tensor, torch.Tensor]:
+        batch_size = len(texts)
+        return torch.zeros(batch_size, 1, self._hidden_dim), torch.ones(batch_size, 1)
+
+    def forward(
+        self, inputs_embeds: torch.Tensor, attention_mask: torch.Tensor, token_type_ids: torch.Tensor
+    ) -> BackboneOutput:
+        return BackboneOutput(
+            readout_states=inputs_embeds[:, -1:, :],
+            token_states=inputs_embeds,
+            attention_mask=attention_mask,
+        )
 
 
 class TestSimpleActionDecoder:
@@ -88,7 +137,7 @@ class TestPolicyConfig:
         assert cfg.backbone.type == "paligemma"
         assert cfg.action_head.type == "mlp"
         assert cfg.merger.type == "concat"
-        assert cfg.vision_encoder.type == "paligemma_siglip"
+        assert cfg.vision_encoder.type == "from_backbone"
         assert cfg.proprio_encoder.type == "linear"
 
     def test_sub_config_independence(self) -> None:
@@ -330,3 +379,60 @@ class TestPolicyBaseEnforcement:
                 def forward(self, batch): ...
 
                 def predict(self, obs): ...
+
+
+class TestBuildPolicyVisionSelection:
+    def _make_policy_config(self) -> PolicyConfig:
+        return PolicyConfig(
+            action_space=ActionSpaceSpec(names=["x"], units=["m"], limits=None),
+        )
+
+    def test_default_uses_backbone_vision_encoder(self) -> None:
+        paired_vision = _StubVisionEncoder(output_dim=32)
+        backbone = _StubBackbone(hidden_dim=32)
+        with patch("yavla.models.vlm_registry.vlm_registry.build", return_value=(paired_vision, backbone)):
+            policy = build_policy(self._make_policy_config())
+        assert policy.vision_encoder is paired_vision
+        assert policy.config.vision_encoder.type == "from_backbone"
+
+    def test_legacy_alias_uses_backbone_vision_encoder_with_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        paired_vision = _StubVisionEncoder(output_dim=32)
+        backbone = _StubBackbone(hidden_dim=32)
+        config = self._make_policy_config()
+        config.vision_encoder = VisionEncoderConfig(type="paligemma_siglip")
+        with caplog.at_level("WARNING"):
+            with patch("yavla.models.vlm_registry.vlm_registry.build", return_value=(paired_vision, backbone)):
+                policy = build_policy(config)
+        assert policy.vision_encoder is paired_vision
+        assert policy.config.vision_encoder.type == "from_backbone"
+        assert "deprecated" in caplog.text
+
+    def test_registry_built_encoder_is_selected(self) -> None:
+        paired_vision = _StubVisionEncoder(output_dim=32)
+        backbone = _StubBackbone(hidden_dim=32)
+        config = self._make_policy_config()
+        config.vision_encoder = SimplePatchVisionEncoderConfig(hidden_dim=32, image_size=32, patch_size=16)
+        with patch("yavla.models.vlm_registry.vlm_registry.build", return_value=(paired_vision, backbone)):
+            policy = build_policy(config)
+        assert policy.vision_encoder is not paired_vision
+        assert policy.vision_encoder.output_dim == 32
+
+    def test_registry_encoder_is_projected_to_backbone_dim(self) -> None:
+        paired_vision = _StubVisionEncoder(output_dim=32)
+        backbone = _StubBackbone(hidden_dim=32)
+        config = self._make_policy_config()
+        config.vision_encoder = SimplePatchVisionEncoderConfig(hidden_dim=8, image_size=32, patch_size=16)
+        with patch("yavla.models.vlm_registry.vlm_registry.build", return_value=(paired_vision, backbone)):
+            policy = build_policy(config)
+        tokens = policy.vision_encoder.encode_images({"cam0": torch.randn(2, 3, 32, 32)})
+        assert policy.vision_encoder.output_dim == 32
+        assert tokens.shape == (2, 4, 32)
+
+    def test_unknown_registry_encoder_type_raises(self) -> None:
+        paired_vision = _StubVisionEncoder(output_dim=32)
+        backbone = _StubBackbone(hidden_dim=32)
+        config = self._make_policy_config()
+        config.vision_encoder = VisionEncoderConfig(type="does_not_exist")
+        with patch("yavla.models.vlm_registry.vlm_registry.build", return_value=(paired_vision, backbone)):
+            with pytest.raises(KeyError, match="simple_patch"):
+                build_policy(config)
