@@ -1,0 +1,34 @@
+# Smoke-test training config for a first low-cost `lerobot/aloha_sim` run.
+# This keeps the batch size and step budget small while wiring explicit
+# embodiment dimensions and adapter-style fine-tuning defaults.
+
+training:
+  dataset:
+    repo_id: "lerobot/aloha_sim"
+    backend: "default"
+    action_chunk_size: 5
+    batch_size: 2
+    num_workers: 0
+    drop_last: true
+    video_backend: "pyav"
+    normalize: true
+    normalize_mode: "z-score"
+  num_steps: 10
+  log_freq: 1
+  save_freq: 10
+  output_dir: "outputs/train_smoke"
+  gradient_checkpointing: true
+  use_policy_preset: true
+  vlm_image_resize_strategy: "warp"
+  wandb: false
+  gradient_accumulation_steps: 1
+
+policy:
+  proprio_encoder:
+    proprio_dim: 14
+  action_head:
+    chunk_len: 5
+    action_dim: 14
+  freeze:
+    freeze_modules: ["vision_tower", "multi_modal_projector"]
+    lora_target_modules: ["q_proj", "v_proj"]

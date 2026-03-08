@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-import torch
+from unittest.mock import patch
+
 import pytest
+import torch
 
 from yavla.models.heads.mlp import (
     MLPHeadConfig,
@@ -11,7 +13,7 @@ from yavla.models.heads.mlp import (
     ResidualMLP,
     head_registry,
 )
-from yavla.models.protocols import ActionHeadRequirements, IntegrationMode
+from yavla.models.protocols import IntegrationMode
 from yavla.models.types import (
     ActionPrediction,
     BackboneOutput,
@@ -58,18 +60,20 @@ class TestMLPRegressionHead:
         cfg = MLPHeadConfig(hidden_dim=64, num_blocks=2, chunk_len=chunk_len, action_dim=action_dim)
         return MLPRegressionHead(config=cfg, backbone_dim=backbone_dim)
 
-    def _make_backbone_output(self, B: int = 2, N_readout: int = 64, D: int = 128) -> BackboneOutput:
+    def _make_backbone_output(self, batch_size: int = 2, n_readout: int = 64, dim: int = 128) -> BackboneOutput:
         return BackboneOutput(
-            readout_states=torch.randn(B, N_readout, D),
+            readout_states=torch.randn(batch_size, n_readout, dim),
             token_states=None,
-            attention_mask=torch.ones(B, N_readout),
+            attention_mask=torch.ones(batch_size, n_readout),
         )
 
-    def _make_training_batch(self, B: int = 2, chunk_len: int = 5, action_dim: int = 7) -> TrainingBatch:
-        obs = ObservationBatch(images={}, proprio=torch.zeros(B, 7))
+    def _make_training_batch(
+        self, batch_size: int = 2, chunk_len: int = 5, action_dim: int = 7
+    ) -> TrainingBatch:
+        obs = ObservationBatch(images={}, proprio=torch.zeros(batch_size, 7))
         return TrainingBatch(
             observations=obs,
-            actions=torch.randn(B, chunk_len, action_dim),
+            actions=torch.randn(batch_size, chunk_len, action_dim),
             dt_hz=10.0,
             chunk_len=chunk_len,
         )
@@ -107,6 +111,56 @@ class TestMLPRegressionHead:
         batch.actions.zero_()
         loss = head.compute_loss(bo, batch)
         assert loss.total.item() == pytest.approx(0.0, abs=1e-6)
+
+    def test_compute_loss_masks_padded_timesteps(self) -> None:
+        head = self._make_head(backbone_dim=128, chunk_len=3, action_dim=2)
+        bo = self._make_backbone_output(batch_size=1)
+        batch = TrainingBatch(
+            observations=ObservationBatch(images={}, proprio=torch.zeros(1, 7)),
+            actions=torch.tensor([[[1.0, 3.0], [5.0, 7.0], [100.0, 100.0]]]),
+            dt_hz=10.0,
+            chunk_len=3,
+            action_mask=torch.tensor([[False, False, True]]),
+        )
+        predicted = torch.zeros(1, 3, 2)
+
+        with patch.object(head, "_pool_and_predict", return_value=predicted):
+            loss = head.compute_loss(bo, batch)
+
+        assert loss.total.item() == pytest.approx(4.0, abs=1e-6)
+
+    def test_compute_loss_returns_zero_for_fully_masked_chunk(self) -> None:
+        head = self._make_head(backbone_dim=128, chunk_len=3, action_dim=2)
+        bo = self._make_backbone_output(batch_size=1)
+        batch = TrainingBatch(
+            observations=ObservationBatch(images={}, proprio=torch.zeros(1, 7)),
+            actions=torch.ones(1, 3, 2),
+            dt_hz=10.0,
+            chunk_len=3,
+            action_mask=torch.ones(1, 3, dtype=torch.bool),
+        )
+
+        with patch.object(head, "_pool_and_predict", return_value=torch.zeros(1, 3, 2)):
+            loss = head.compute_loss(bo, batch)
+
+        assert torch.isfinite(loss.total)
+        assert loss.total.item() == pytest.approx(0.0, abs=1e-6)
+
+    def test_compute_loss_rejects_chunk_length_mismatch(self) -> None:
+        head = self._make_head(chunk_len=5, action_dim=7)
+        bo = self._make_backbone_output()
+        batch = self._make_training_batch(chunk_len=4, action_dim=7)
+
+        with pytest.raises(ValueError, match="chunk length mismatch: expected 5, got 4"):
+            head.compute_loss(bo, batch)
+
+    def test_compute_loss_rejects_action_dimension_mismatch(self) -> None:
+        head = self._make_head(chunk_len=5, action_dim=7)
+        bo = self._make_backbone_output()
+        batch = self._make_training_batch(chunk_len=5, action_dim=8)
+
+        with pytest.raises(ValueError, match="action dimension mismatch: expected 7, got 8"):
+            head.compute_loss(bo, batch)
 
     def test_no_readout_raises(self) -> None:
         head = self._make_head()

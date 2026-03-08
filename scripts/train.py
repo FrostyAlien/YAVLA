@@ -22,13 +22,17 @@ from __future__ import annotations
 
 import logging
 import sys
-from dataclasses import dataclass, field
+import types
+from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
+from typing import Any, Union, cast, get_args, get_origin, get_type_hints
 
 import tyro
 
 from yavla.models.config import PolicyConfig
+from yavla.models.encoders.vision import VisionEncoderConfig, get_vision_config_class
 from yavla.models.policy import build_policy
+from yavla.models.types import TrainingBatch
 from yavla.training import Trainer, TrainingConfig, create_training_dataloader
 from yavla.training.siglip_preprocess import autowire_siglip_image_transforms
 
@@ -42,10 +46,70 @@ class TrainConfig:
     training: TrainingConfig = field(default_factory=TrainingConfig)
     policy: PolicyConfig = field(default_factory=PolicyConfig)
 
+def _resolve_config_dataclass(expected_type: Any, raw: object) -> Any:
+    if expected_type is VisionEncoderConfig and isinstance(raw, dict):
+        type_name = raw.get("type")
+        return get_vision_config_class(type_name if isinstance(type_name, str) else None)
+    return expected_type
 
-def _filter_fields(cls: type, raw: dict[str, object]) -> dict[str, object]:
-    """Keep only keys that match dataclass fields."""
-    return {k: v for k, v in raw.items() if k in cls.__dataclass_fields__}  # type: ignore[attr-defined]
+
+def _coerce_config_value(expected_type: Any, raw: object) -> object:
+    if expected_type is Any:
+        return raw
+
+    expected_type = _resolve_config_dataclass(expected_type, raw)
+    if isinstance(expected_type, type) and is_dataclass(expected_type) and isinstance(raw, dict):
+        return _build_dataclass(expected_type, raw)
+
+    origin = get_origin(expected_type)
+    if origin is None:
+        return raw
+
+    if origin is list:
+        item_type = get_args(expected_type)[0] if get_args(expected_type) else Any
+        if not isinstance(raw, list):
+            return raw
+        return [_coerce_config_value(item_type, item) for item in raw]
+
+    if origin is dict:
+        _, value_type = get_args(expected_type) if get_args(expected_type) else (Any, Any)
+        if not isinstance(raw, dict):
+            return raw
+        return {str(key): _coerce_config_value(value_type, value) for key, value in raw.items()}
+
+    if origin is tuple:
+        item_types = get_args(expected_type)
+        if not isinstance(raw, (list, tuple)):
+            return raw
+        if len(item_types) == 2 and item_types[1] is Ellipsis:
+            return tuple(_coerce_config_value(item_types[0], item) for item in raw)
+        if len(item_types) == len(raw):
+            return tuple(_coerce_config_value(item_type, item) for item_type, item in zip(item_types, raw, strict=True))
+        return tuple(raw)
+
+    if origin in (types.UnionType, Union):
+        union_args = get_args(expected_type)
+        if raw is None and type(None) in union_args:
+            return None
+        for option in union_args:
+            if option is type(None):
+                continue
+            resolved_option = _resolve_config_dataclass(option, raw)
+            if isinstance(resolved_option, type) and is_dataclass(resolved_option) and isinstance(raw, dict):
+                return _coerce_config_value(option, raw)
+        return raw
+
+    return raw
+
+
+def _build_dataclass(cls: type[Any], raw: dict[str, object]) -> Any:
+    hints = get_type_hints(cls)
+    kwargs: dict[str, object] = {}
+    for f in fields(cls):
+        if f.name not in raw:
+            continue
+        kwargs[f.name] = _coerce_config_value(hints.get(f.name, f.type), raw[f.name])
+    return cls(**kwargs)
 
 
 def _pop_config_flag() -> TrainConfig | None:
@@ -61,35 +125,69 @@ def _pop_config_flag() -> TrainConfig | None:
     if not path.exists():
         sys.exit(f"error: config file not found: {path}")
 
-    import yaml
+    import yaml  # type: ignore[import-untyped]
 
     with open(path) as f:
         loaded = yaml.safe_load(f)
     raw: dict[str, object] = loaded if isinstance(loaded, dict) else {}
 
-    from yavla.training.config import OptimizerConfig, SchedulerConfig
+    if "training" in raw or "policy" in raw:
+        return cast(TrainConfig, _build_dataclass(TrainConfig, raw))
 
-    opt_raw = raw.pop("optimizer", {})
-    if isinstance(opt_raw, dict) and "betas" in opt_raw:
-        opt_raw["betas"] = tuple(opt_raw["betas"])
-    opt = OptimizerConfig(**_filter_fields(OptimizerConfig, opt_raw))  # type: ignore[arg-type]
-    sched = SchedulerConfig(**_filter_fields(SchedulerConfig, raw.pop("scheduler", {})))  # type: ignore[arg-type]
+    LOGGER.warning(
+        "Legacy flat train config format is deprecated; nest training fields under "
+        "top-level 'training:' and use 'policy:' for model settings."
+    )
+    return TrainConfig(training=cast(TrainingConfig, _build_dataclass(TrainingConfig, raw)))
 
-    dataset_raw = raw.pop("dataset", None)
-    viz_raw = raw.pop("viz", None)
-    training_kwargs: dict[str, object] = {"optimizer": opt, "scheduler": sched}
-    if isinstance(dataset_raw, dict):
-        from yavla.data.factory import DataConfig
 
-        training_kwargs["dataset"] = DataConfig(**{str(k): v for k, v in dataset_raw.items()})
-    if isinstance(viz_raw, dict):
-        from yavla.visualization.config import VizConfig
+def _peek_training_batch(dataloader: Any) -> TrainingBatch:
+    try:
+        batch = next(iter(dataloader))
+    except StopIteration:
+        sys.exit("error: training dataloader is empty; cannot validate action/proprio dimensions")
 
-        training_kwargs["viz"] = VizConfig(**_filter_fields(VizConfig, viz_raw))  # type: ignore[arg-type]
-    for k, v in raw.items():
-        if k in TrainingConfig.__dataclass_fields__:
-            training_kwargs[k] = v
-    return TrainConfig(training=TrainingConfig(**training_kwargs))  # type: ignore[arg-type]
+    if not isinstance(batch, TrainingBatch):
+        sys.exit(f"error: training dataloader yielded {type(batch).__name__}, expected TrainingBatch")
+    return batch
+
+
+def _validate_training_dimensions(cfg: TrainConfig, batch: TrainingBatch) -> None:
+    configured_chunk_len = cfg.policy.action_head.chunk_len
+    configured_action_dim = cfg.policy.action_head.action_dim
+    configured_proprio_dim = cfg.policy.proprio_encoder.proprio_dim
+    dataset_chunk_len = cfg.training.dataset.action_chunk_size
+
+    if dataset_chunk_len is not None and dataset_chunk_len != configured_chunk_len:
+        sys.exit(
+            "error: training.dataset.action_chunk_size="
+            f"{dataset_chunk_len} does not match policy.action_head.chunk_len={configured_chunk_len}; "
+            "fix the dataset action chunk size or the policy action head chunk length"
+        )
+
+    actual_chunk_len = batch.actions.shape[1]
+    if actual_chunk_len != configured_chunk_len:
+        sys.exit(
+            "error: first batch action chunk length mismatch: "
+            f"expected policy.action_head.chunk_len={configured_chunk_len}, got {actual_chunk_len}; "
+            "fix policy.action_head.chunk_len or training.dataset.action_chunk_size"
+        )
+
+    actual_action_dim = batch.actions.shape[2]
+    if actual_action_dim != configured_action_dim:
+        sys.exit(
+            "error: first batch action dimension mismatch: "
+            f"expected policy.action_head.action_dim={configured_action_dim}, got {actual_action_dim}; "
+            "fix policy.action_head.action_dim to match the dataset embodiment"
+        )
+
+    actual_proprio_dim = batch.observations.proprio.shape[-1]
+    if actual_proprio_dim != configured_proprio_dim:
+        sys.exit(
+            "error: first batch proprio dimension mismatch: "
+            f"expected policy.proprio_encoder.proprio_dim={configured_proprio_dim}, got {actual_proprio_dim}; "
+            "fix policy.proprio_encoder.proprio_dim to match the dataset embodiment"
+        )
 
 
 def main() -> None:
@@ -97,6 +195,11 @@ def main() -> None:
 
     default = _pop_config_flag() or TrainConfig()
     cfg = tyro.cli(TrainConfig, default=default)
+    LOGGER.info("Effective train config: %s", cfg)
+
+    from accelerate.utils import set_seed  # type: ignore[import-untyped]
+
+    set_seed(cfg.training.dataset.seed)
 
     LOGGER.info("Building policy...")
     policy = build_policy(cfg.policy)
@@ -115,6 +218,7 @@ def main() -> None:
     dataloader = create_training_dataloader(
         cfg.training, dt_hz=cfg.policy.dt_hz, chunk_len=cfg.policy.action_head.chunk_len
     )
+    _validate_training_dimensions(cfg, _peek_training_batch(dataloader))
 
     trainer = Trainer(policy, cfg.training, dataloader)
     LOGGER.info("Starting training for %d steps", cfg.training.num_steps)

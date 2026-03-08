@@ -92,8 +92,38 @@ class MLPRegressionHead(ActionHeadBase):
 
     def compute_loss(self, backbone_output: BackboneOutput, batch: TrainingBatch) -> LossDict:
         predicted = self._pool_and_predict(backbone_output)
-        target = batch.actions[:, : self._config.chunk_len, : self._config.action_dim]
-        l1 = F.l1_loss(predicted, target)
+        if batch.actions.shape[1] != self._config.chunk_len:
+            raise ValueError(
+                "MLPRegressionHead chunk length mismatch: "
+                f"expected {self._config.chunk_len}, got {batch.actions.shape[1]}"
+            )
+        if batch.actions.shape[2] != self._config.action_dim:
+            raise ValueError(
+                "MLPRegressionHead action dimension mismatch: "
+                f"expected {self._config.action_dim}, got {batch.actions.shape[2]}"
+            )
+
+        target = batch.actions
+        action_mask = batch.action_mask
+        if action_mask is None:
+            l1 = F.l1_loss(predicted, target)
+            return LossDict(total=l1, breakdown={"l1": l1})
+
+        if action_mask.shape != target.shape[:2]:
+            raise ValueError(
+                "MLPRegressionHead action mask shape mismatch: "
+                f"expected {target.shape[:2]}, got {tuple(action_mask.shape)}"
+            )
+
+        valid_steps = ~action_mask
+        valid_step_count = int(valid_steps.sum().item())
+        if valid_step_count == 0:
+            l1 = predicted.new_zeros(())
+            return LossDict(total=l1, breakdown={"l1": l1})
+
+        per_elem_l1 = F.l1_loss(predicted, target, reduction="none")
+        masked_l1 = per_elem_l1 * valid_steps.unsqueeze(-1)
+        l1 = masked_l1.sum() / (valid_step_count * self._config.action_dim)
         return LossDict(total=l1, breakdown={"l1": l1})
 
 
