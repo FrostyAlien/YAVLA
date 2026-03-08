@@ -123,6 +123,15 @@ logs a warning (you are responsible for verifying VLM compatibility).
 - For custom/non-contiguous action deltas, set `delta_timestamps["action"]` directly and leave `action_chunk_size` unset.
 - Do not set both `action_chunk_size` and `delta_timestamps["action"]` (ambiguous; raises `ValueError`).
 
+## Notes: Embodiment Dimensions
+
+- The dataset layer is always embodiment-exact. If your robot has 14 active action dimensions and 14 proprio dimensions,
+  keep dataset tensors at `[B, chunk_len, 14]` and `[B, 14]`.
+- Do not manually pad dataset actions or proprio to a pretrained model's `max_action_dim` / `max_proprio_dim`.
+- In exact MVP training, dataset and model dimensions must match exactly.
+- In pretrained-VLA `max_padded` mode, any zero-padding of proprio and any inactive-dimension masking for actions happens
+  inside the policy and training path after the dataset boundary.
+
 ## Common Recipes
 
 ### Default backend (most common)

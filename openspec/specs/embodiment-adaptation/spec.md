@@ -1,5 +1,9 @@
-## ADDED Requirements
+# embodiment-adaptation Specification
 
+## Purpose
+Define the embodiment adaptation contract for pretrained multi-embodiment VLAs, including active versus maximum dimensions, training-time padding and masking, inference slicing, and checkpoint compatibility rules.
+
+## Requirements
 ### Requirement: Pretrained-VLA embodiment mode is explicit
 YAVLA SHALL expose an explicit pretrained-VLA embodiment adaptation mode that distinguishes active embodiment dimensions from model maximum dimensions. In this mode, policy configuration SHALL record `action_dim`, `proprio_dim`, `max_action_dim`, and `max_proprio_dim`, and the system MUST reject configurations where an active dimension exceeds its model maximum.
 
@@ -35,6 +39,10 @@ In pretrained-VLA embodiment adaptation mode, action heads MAY predict the model
 
 ### Requirement: Checkpoints record max-width and active-embodiment metadata
 Checkpoint save and load flows SHALL distinguish model maximum dimensions from active embodiment dimensions. `save_pretrained()` SHALL persist both max-width metadata and active embodiment metadata, and `from_pretrained()` SHALL validate them explicitly. `strict=True` SHALL require exact max-width compatibility, while `strict=False` SHALL permit rebinding to another embodiment only when the target configuration provides explicit embodiment metadata and its active dimensions do not exceed the checkpoint's max dimensions.
+
+#### Scenario: Legacy checkpoint metadata is rejected
+- **WHEN** `from_pretrained()` loads a checkpoint whose `config.json` lacks an `embodiment` block or whose `embodiment.json` lacks max-width fields
+- **THEN** YAVLA SHALL raise a validation error stating that legacy embodiment-less checkpoints are unsupported
 
 #### Scenario: Strict load rejects max-width mismatch
 - **WHEN** `from_pretrained(strict=True)` loads a checkpoint with `max_action_dim=32` into a config with `max_action_dim=24`

@@ -38,8 +38,9 @@ training:
   gradient_accumulation_steps: 1
 
 policy:
-  proprio_encoder:
+  embodiment:
+    mode: "exact"
+    action_dim: 14
     proprio_dim: 14
   action_head:
     chunk_len: 5
-    action_dim: 14

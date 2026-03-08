@@ -146,6 +146,64 @@ class TestMLPRegressionHead:
         assert torch.isfinite(loss.total)
         assert loss.total.item() == pytest.approx(0.0, abs=1e-6)
 
+    def test_compute_loss_masks_inactive_action_dimensions(self) -> None:
+        head = self._make_head(backbone_dim=128, chunk_len=2, action_dim=4)
+        bo = self._make_backbone_output(batch_size=1)
+        batch = TrainingBatch(
+            observations=ObservationBatch(images={}, proprio=torch.zeros(1, 7)),
+            actions=torch.tensor([[[1.0, 3.0, 100.0, 100.0], [5.0, 7.0, 100.0, 100.0]]]),
+            dt_hz=10.0,
+            chunk_len=2,
+            action_dim_mask=torch.tensor([False, False, True, True]),
+        )
+
+        with patch.object(head, "_pool_and_predict", return_value=torch.zeros(1, 2, 4)):
+            loss = head.compute_loss(bo, batch)
+
+        assert loss.total.item() == pytest.approx(4.0, abs=1e-6)
+
+    def test_compute_loss_combines_timestep_and_dimension_masks(self) -> None:
+        head = self._make_head(backbone_dim=128, chunk_len=3, action_dim=4)
+        bo = self._make_backbone_output(batch_size=1)
+        batch = TrainingBatch(
+            observations=ObservationBatch(images={}, proprio=torch.zeros(1, 7)),
+            actions=torch.tensor(
+                [
+                    [
+                        [1.0, 3.0, 100.0, 100.0],
+                        [5.0, 7.0, 100.0, 100.0],
+                        [9.0, 11.0, 100.0, 100.0],
+                    ]
+                ]
+            ),
+            dt_hz=10.0,
+            chunk_len=3,
+            action_mask=torch.tensor([[False, True, False]]),
+            action_dim_mask=torch.tensor([False, False, True, True]),
+        )
+
+        with patch.object(head, "_pool_and_predict", return_value=torch.zeros(1, 3, 4)):
+            loss = head.compute_loss(bo, batch)
+
+        assert loss.total.item() == pytest.approx(6.0, abs=1e-6)
+
+    def test_compute_loss_returns_zero_for_fully_dimension_masked_chunk(self) -> None:
+        head = self._make_head(backbone_dim=128, chunk_len=2, action_dim=3)
+        bo = self._make_backbone_output(batch_size=1)
+        batch = TrainingBatch(
+            observations=ObservationBatch(images={}, proprio=torch.zeros(1, 7)),
+            actions=torch.ones(1, 2, 3),
+            dt_hz=10.0,
+            chunk_len=2,
+            action_dim_mask=torch.ones(3, dtype=torch.bool),
+        )
+
+        with patch.object(head, "_pool_and_predict", return_value=torch.zeros(1, 2, 3)):
+            loss = head.compute_loss(bo, batch)
+
+        assert torch.isfinite(loss.total)
+        assert loss.total.item() == pytest.approx(0.0, abs=1e-6)
+
     def test_compute_loss_rejects_chunk_length_mismatch(self) -> None:
         head = self._make_head(chunk_len=5, action_dim=7)
         bo = self._make_backbone_output()
@@ -160,6 +218,18 @@ class TestMLPRegressionHead:
         batch = self._make_training_batch(chunk_len=5, action_dim=8)
 
         with pytest.raises(ValueError, match="action dimension mismatch: expected 7, got 8"):
+            head.compute_loss(bo, batch)
+
+    def test_compute_loss_rejects_action_dimension_mask_shape_mismatch(self) -> None:
+        head = self._make_head(chunk_len=5, action_dim=7)
+        bo = self._make_backbone_output()
+        batch = self._make_training_batch(chunk_len=5, action_dim=7)
+        batch.action_dim_mask = torch.zeros(5, dtype=torch.bool)
+
+        with pytest.raises(
+            ValueError,
+            match="dimension mask shape mismatch: expected torch.Size\\(\\[7\\]\\), got \\(5,\\)",
+        ):
             head.compute_loss(bo, batch)
 
     def test_no_readout_raises(self) -> None:

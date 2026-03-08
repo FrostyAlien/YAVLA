@@ -134,11 +134,10 @@ def _pop_config_flag() -> TrainConfig | None:
     if "training" in raw or "policy" in raw:
         return cast(TrainConfig, _build_dataclass(TrainConfig, raw))
 
-    LOGGER.warning(
-        "Legacy flat train config format is deprecated; nest training fields under "
-        "top-level 'training:' and use 'policy:' for model settings."
+    sys.exit(
+        "error: legacy flat train config format is not supported; nest fields under top-level "
+        "'training:' and 'policy:'"
     )
-    return TrainConfig(training=cast(TrainingConfig, _build_dataclass(TrainingConfig, raw)))
 
 
 def _peek_training_batch(dataloader: Any) -> TrainingBatch:
@@ -154,8 +153,8 @@ def _peek_training_batch(dataloader: Any) -> TrainingBatch:
 
 def _validate_training_dimensions(cfg: TrainConfig, batch: TrainingBatch) -> None:
     configured_chunk_len = cfg.policy.action_head.chunk_len
-    configured_action_dim = cfg.policy.action_head.action_dim
-    configured_proprio_dim = cfg.policy.proprio_encoder.proprio_dim
+    configured_action_dim = cfg.policy.action_dim
+    configured_proprio_dim = cfg.policy.proprio_dim
     dataset_chunk_len = cfg.training.dataset.action_chunk_size
 
     if dataset_chunk_len is not None and dataset_chunk_len != configured_chunk_len:
@@ -177,16 +176,16 @@ def _validate_training_dimensions(cfg: TrainConfig, batch: TrainingBatch) -> Non
     if actual_action_dim != configured_action_dim:
         sys.exit(
             "error: first batch action dimension mismatch: "
-            f"expected policy.action_head.action_dim={configured_action_dim}, got {actual_action_dim}; "
-            "fix policy.action_head.action_dim to match the dataset embodiment"
+            f"expected policy.embodiment.action_dim={configured_action_dim}, got {actual_action_dim}; "
+            "fix policy.embodiment.action_dim to match the dataset embodiment"
         )
 
     actual_proprio_dim = batch.observations.proprio.shape[-1]
     if actual_proprio_dim != configured_proprio_dim:
         sys.exit(
             "error: first batch proprio dimension mismatch: "
-            f"expected policy.proprio_encoder.proprio_dim={configured_proprio_dim}, got {actual_proprio_dim}; "
-            "fix policy.proprio_encoder.proprio_dim to match the dataset embodiment"
+            f"expected policy.embodiment.proprio_dim={configured_proprio_dim}, got {actual_proprio_dim}; "
+            "fix policy.embodiment.proprio_dim to match the dataset embodiment"
         )
 
 

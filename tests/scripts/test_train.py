@@ -10,8 +10,7 @@ import scripts.train as train_script
 import torch
 
 from yavla.data.factory import DataConfig
-from yavla.models.config import PolicyConfig
-from yavla.models.encoders.proprio import ProprioEncoderConfig
+from yavla.models.config import EmbodimentConfig, PolicyConfig
 from yavla.models.heads.mlp import MLPHeadConfig
 from yavla.models.types import ObservationBatch, TrainingBatch
 from yavla.training.config import TrainingConfig
@@ -32,8 +31,8 @@ def _make_train_config(
             )
         ),
         policy=PolicyConfig(
-            action_head=MLPHeadConfig(chunk_len=chunk_len, action_dim=action_dim),
-            proprio_encoder=ProprioEncoderConfig(proprio_dim=proprio_dim),
+            action_head=MLPHeadConfig(chunk_len=chunk_len),
+            embodiment=EmbodimentConfig(action_dim=action_dim, proprio_dim=proprio_dim),
         ),
     )
 
@@ -60,11 +59,14 @@ training:
     betas: [0.8, 0.88]
   num_steps: 10
 policy:
-  action_head:
+  embodiment:
+    mode: max_padded
     action_dim: 14
-    chunk_len: 5
-  proprio_encoder:
     proprio_dim: 14
+    max_action_dim: 32
+    max_proprio_dim: 32
+  action_head:
+    chunk_len: 5
   dt_hz: 20.0
 """.strip()
     )
@@ -76,12 +78,16 @@ policy:
     assert cfg.training.dataset.batch_size == 2
     assert cfg.training.optimizer.betas == (0.8, 0.88)
     assert cfg.training.num_steps == 10
-    assert cfg.policy.action_head.action_dim == 14
-    assert cfg.policy.proprio_encoder.proprio_dim == 14
+    assert cfg.policy.action_dim == 14
+    assert cfg.policy.proprio_dim == 14
+    assert cfg.policy.max_action_dim == 32
+    assert cfg.policy.max_proprio_dim == 32
+    assert cfg.policy.action_head.action_dim == 32
+    assert cfg.policy.proprio_encoder.proprio_dim == 32
     assert cfg.policy.dt_hz == 20.0
 
 
-def test_pop_config_flag_supports_legacy_flat_training_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pop_config_flag_rejects_legacy_flat_training_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     config_path = tmp_path / "flat.yaml"
     config_path.write_text(
         """
@@ -96,13 +102,8 @@ num_steps: 12
     )
     monkeypatch.setattr(sys, "argv", ["train.py", "--config", str(config_path)])
 
-    cfg = train_script._pop_config_flag()
-
-    assert cfg is not None
-    assert cfg.training.dataset.batch_size == 4
-    assert cfg.training.optimizer.betas == (0.7, 0.95)
-    assert cfg.training.num_steps == 12
-    assert cfg.policy == PolicyConfig()
+    with pytest.raises(SystemExit, match="legacy flat train config format is not supported"):
+        train_script._pop_config_flag()
 
 
 @pytest.mark.parametrize(
@@ -116,12 +117,12 @@ num_steps: 12
         (
             _make_train_config(action_dim=7),
             _make_batch(action_dim=8),
-            "policy.action_head.action_dim=7, got 8",
+            "policy.embodiment.action_dim=7, got 8",
         ),
         (
             _make_train_config(proprio_dim=7),
             _make_batch(proprio_dim=9),
-            "policy.proprio_encoder.proprio_dim=7, got 9",
+            "policy.embodiment.proprio_dim=7, got 9",
         ),
     ],
 )

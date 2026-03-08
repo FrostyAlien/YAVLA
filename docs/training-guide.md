@@ -59,6 +59,53 @@ tyro naming conventions:
 - Hyphens (`-`) for underscores: `--training.num-steps` maps to `num_steps`
 - Booleans: `--training.wandb True` / `--training.wandb False`
 
+Only nested `TrainConfig` YAML is supported. Legacy flat files that put `dataset:` or `optimizer:` at the top level are rejected.
+
+### Exact MVP vs Pretrained-VLA Embodiment Adaptation
+
+YAVLA now supports two explicit embodiment modes under `policy.embodiment`:
+
+- `mode: exact` keeps the dataset and model widths identical. This is the default and the right choice for MVP smoke training.
+- `mode: max_padded` keeps the dataset embodiment exact at the data boundary, but builds the model at a wider pretrained width.
+
+Use `exact` for first training runs unless you are intentionally training or loading a shared multi-embodiment checkpoint.
+
+Exact-width example:
+
+```yaml
+policy:
+  embodiment:
+    mode: "exact"
+    action_dim: 14
+    proprio_dim: 14
+  action_head:
+    chunk_len: 5
+```
+
+Pretrained-VLA example:
+
+```yaml
+policy:
+  embodiment:
+    mode: "max_padded"
+    action_dim: 14
+    proprio_dim: 14
+    max_action_dim: 32
+    max_proprio_dim: 32
+  action_head:
+    chunk_len: 5
+```
+
+In `max_padded` mode:
+- the dataset still yields `[B, chunk_len, 14]` actions and `[B, 14]` proprio
+- the policy zero-pads proprio to `max_proprio_dim` internally
+- the action head predicts `max_action_dim` internally
+- training masks inactive action dimensions out of the loss
+- inference slices predictions back to the active `action_dim`
+
+See [configs/train_smoke.yaml](../configs/train_smoke.yaml) for the exact MVP path and
+[configs/train_pretrained_vla.yaml](../configs/train_pretrained_vla.yaml) for the pretrained-VLA path.
+
 ## Training Config Reference
 
 `TrainingConfig` is defined in `src/yavla/training/config.py`.
@@ -221,6 +268,45 @@ On resume, the trainer:
 1. Scans `output_dir` for the highest-step `checkpoint-*` directory
 2. Restores full training state via `accelerator.load_state()`
 3. Fast-forwards the dataloader by `start_step * gradient_accumulation_steps` micro-batches via `skip_first_batches` so no data is replayed
+
+### Embodiment-Aware Checkpoint Loading
+
+`VLAPolicy.from_pretrained()` distinguishes the checkpoint's active embodiment from its maximum internal width.
+Only embodiment-aware checkpoints saved in the current format are supported. Older checkpoints without the `embodiment`
+block in `config.json` or without full max-width metadata in `embodiment.json` are rejected.
+
+Strict loading keeps the checkpoint binding unchanged:
+
+```python
+from yavla.models.policy import VLAPolicy
+
+policy = VLAPolicy.from_pretrained("outputs/train_pretrained_vla/checkpoint-final", strict=True)
+```
+
+Non-strict loading can rebind a checkpoint to a smaller compatible embodiment, but the target config must keep the same
+maximum widths:
+
+```python
+from yavla.models.config import EmbodimentConfig, PolicyConfig
+from yavla.models.policy import VLAPolicy
+
+target = PolicyConfig(
+    embodiment=EmbodimentConfig(
+        mode="max_padded",
+        action_dim=14,
+        proprio_dim=14,
+        max_action_dim=32,
+        max_proprio_dim=32,
+    )
+)
+policy = VLAPolicy.from_pretrained(
+    "outputs/train_pretrained_vla/checkpoint-final",
+    config=target,
+    strict=False,
+)
+```
+
+`strict=True` rejects max-width mismatches. `strict=False` still rejects target embodiments whose active dimensions exceed the checkpoint's max widths.
 
 ## Logging
 

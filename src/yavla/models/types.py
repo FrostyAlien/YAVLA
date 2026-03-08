@@ -76,6 +76,7 @@ class TrainingBatch:
     dt_hz: float
     chunk_len: int
     action_mask: Tensor | None = None  # [B, chunk_len] — True = padded/invalid (action_is_pad polarity)
+    action_dim_mask: Tensor | None = None  # [action_dim] — True = inactive/invalid dimension
 
 
 @dataclass

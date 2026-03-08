@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import torch
 import pytest
+import torch
 
+from yavla.models.config import EmbodimentConfig, PolicyConfig
 from yavla.models.decoder import SimpleActionDecoder
-from yavla.models.config import PolicyConfig
 from yavla.models.encoders.vision import SimplePatchVisionEncoderConfig, VisionEncoderConfig
-from yavla.models.policy import build_policy
+from yavla.models.heads.mlp import MLPHeadConfig
+from yavla.models.policy import VLAPolicy, build_policy
 from yavla.models.protocols import BackboneBase, BackboneCapabilities, IntegrationMode, VisionEncoderBase
 from yavla.models.types import (
     ActionChunk,
@@ -19,7 +20,6 @@ from yavla.models.types import (
     BackboneOutput,
     LossDict,
     ObservationBatch,
-    ProprioSpec,
     TrainingBatch,
 )
 
@@ -132,13 +132,18 @@ class TestSimpleActionDecoder:
 class TestPolicyConfig:
     def test_defaults(self) -> None:
         cfg = PolicyConfig()
-        assert cfg.config_version == "1.0"
+        assert cfg.config_version == "1.1"
         assert cfg.dt_hz == 10.0
         assert cfg.backbone.type == "paligemma"
         assert cfg.action_head.type == "mlp"
         assert cfg.merger.type == "concat"
         assert cfg.vision_encoder.type == "from_backbone"
         assert cfg.proprio_encoder.type == "linear"
+        assert cfg.embodiment.mode == "exact"
+        assert cfg.action_dim == 7
+        assert cfg.proprio_dim == 7
+        assert cfg.max_action_dim == 7
+        assert cfg.max_proprio_dim == 7
 
     def test_sub_config_independence(self) -> None:
         c1 = PolicyConfig()
@@ -146,57 +151,109 @@ class TestPolicyConfig:
         c1.action_head.action_dim = 99
         assert c2.action_head.action_dim == 7  # default, not mutated
 
+    def test_max_padded_embodiment_derives_module_widths(self) -> None:
+        cfg = PolicyConfig(
+            embodiment=EmbodimentConfig(
+                mode="max_padded",
+                action_dim=14,
+                proprio_dim=14,
+                max_action_dim=32,
+                max_proprio_dim=32,
+            )
+        )
+        assert cfg.action_dim == 14
+        assert cfg.proprio_dim == 14
+        assert cfg.max_action_dim == 32
+        assert cfg.max_proprio_dim == 32
+        assert cfg.action_head.action_dim == 32
+        assert cfg.proprio_encoder.proprio_dim == 32
+
+    def test_invalid_embodiment_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="action_dim must not exceed max_action_dim"):
+            PolicyConfig(
+                embodiment=EmbodimentConfig(
+                    mode="max_padded",
+                    action_dim=18,
+                    proprio_dim=14,
+                    max_action_dim=14,
+                    max_proprio_dim=32,
+                )
+            )
+
+    def test_legacy_module_dim_override_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="legacy width override"):
+            PolicyConfig(
+                embodiment=EmbodimentConfig(
+                    mode="max_padded",
+                    action_dim=14,
+                    proprio_dim=14,
+                    max_action_dim=32,
+                    max_proprio_dim=32,
+                ),
+                action_head=MLPHeadConfig(action_dim=14),
+            )
+
 
 class TestVLAPolicy:
     """Test VLAPolicy with mocked subcomponents (no real PaliGemma)."""
 
     B, D, N_IMG, N_READOUT, CHUNK, ADIM = 2, 64, 4, 8, 5, 7
 
-    def _make_policy(self, n_img: int | None = None) -> "VLAPolicy":
-        from yavla.models.policy import VLAPolicy
+    def _make_policy(
+        self,
+        n_img: int | None = None,
+        *,
+        config: PolicyConfig | None = None,
+    ) -> VLAPolicy:
         from yavla.models.backbones.paligemma import PaliGemmaVisionEncoder
         from yavla.models.encoders.proprio import ProprioEncoder, ProprioEncoderConfig
+        from yavla.models.heads.mlp import MLPHeadConfig, MLPRegressionHead
         from yavla.models.merger import ConcatMerger, TokenMergerConfig
-        from yavla.models.heads.mlp import MLPRegressionHead, MLPHeadConfig
 
-        D = self.D
+        backbone_dim = self.D
         n_img = self.N_IMG if n_img is None else n_img
 
         # Mock vision encoder
         vision = MagicMock(spec=PaliGemmaVisionEncoder)
-        vision.encode_images = MagicMock(return_value=torch.randn(self.B, n_img, D))
+        vision.encode_images = MagicMock(return_value=torch.randn(self.B, n_img, backbone_dim))
 
         # Real proprio encoder
-        proprio = ProprioEncoder(ProprioEncoderConfig(proprio_dim=7, backbone_dim=D))
+        config = PolicyConfig() if config is None else config
+
+        proprio = ProprioEncoder(
+            ProprioEncoderConfig(proprio_dim=config.max_proprio_dim, backbone_dim=backbone_dim)
+        )
 
         # Real merger
-        merger = ConcatMerger(TokenMergerConfig(num_readout_tokens=self.N_READOUT), backbone_dim=D)
+        merger = ConcatMerger(
+            TokenMergerConfig(num_readout_tokens=self.N_READOUT),
+            backbone_dim=backbone_dim,
+        )
 
         # Mock backbone
         backbone = MagicMock()
         backbone.embed_language = MagicMock(
-            return_value=(torch.randn(self.B, 3, D), torch.ones(self.B, 3))
+            return_value=(torch.randn(self.B, 3, backbone_dim), torch.ones(self.B, 3))
         )
 
         total_seq = n_img + 1 + 3 + self.N_READOUT
         backbone.return_value = BackboneOutput(
-            readout_states=torch.randn(self.B, self.N_READOUT, D),
-            token_states=torch.randn(self.B, total_seq, D),
+            readout_states=torch.randn(self.B, self.N_READOUT, backbone_dim),
+            token_states=torch.randn(self.B, total_seq, backbone_dim),
             attention_mask=torch.ones(self.B, total_seq),
         )
 
         # Real action head
         head = MLPRegressionHead(
-            MLPHeadConfig(hidden_dim=32, num_blocks=1, chunk_len=self.CHUNK, action_dim=self.ADIM),
-            backbone_dim=D,
+            MLPHeadConfig(hidden_dim=32, num_blocks=1, chunk_len=self.CHUNK, action_dim=config.max_action_dim),
+            backbone_dim=backbone_dim,
         )
 
         # Real decoder
-        spec = ActionSpaceSpec(names=[], units=[], limits=None)
+        spec = ActionSpaceSpec(names=["x"] * config.action_dim, units=["m"] * config.action_dim, limits=None)
         decoder = SimpleActionDecoder(action_space_spec=spec, dt_hz=10.0)
 
-        cfg = PolicyConfig()
-        return VLAPolicy(vision, proprio, merger, backbone, head, decoder, cfg)
+        return VLAPolicy(vision, proprio, merger, backbone, head, decoder, config)
 
     def _make_obs(self) -> ObservationBatch:
         return ObservationBatch(
@@ -259,6 +316,43 @@ class TestVLAPolicy:
         assert chunk.actions.shape == (self.B, self.CHUNK, self.ADIM)
         assert chunk.dt_hz == 10.0
 
+    def test_encode_observations_pads_proprio_for_max_padded_mode(self) -> None:
+        config = PolicyConfig(
+            embodiment=EmbodimentConfig(
+                mode="max_padded",
+                action_dim=7,
+                proprio_dim=7,
+                max_action_dim=11,
+                max_proprio_dim=11,
+            )
+        )
+        policy = self._make_policy(config=config)
+        policy.proprio_encoder.encode_proprio = MagicMock(return_value=torch.zeros(self.B, 1, self.D))
+        obs = self._make_obs()
+
+        policy.encode_observations(obs)
+
+        passed_proprio = policy.proprio_encoder.encode_proprio.call_args[0][0]
+        assert passed_proprio.shape == (self.B, 11)
+        assert torch.allclose(passed_proprio[:, :7], obs.proprio)
+        assert torch.count_nonzero(passed_proprio[:, 7:]) == 0
+
+    def test_predict_slices_max_width_actions_to_active_embodiment(self) -> None:
+        config = PolicyConfig(
+            embodiment=EmbodimentConfig(
+                mode="max_padded",
+                action_dim=3,
+                proprio_dim=7,
+                max_action_dim=5,
+                max_proprio_dim=7,
+            )
+        )
+        policy = self._make_policy(config=config)
+        obs = self._make_obs()
+        chunk = policy.predict(obs)
+
+        assert chunk.actions.shape == (self.B, self.CHUNK, 3)
+
     def test_submodule_access(self) -> None:
         policy = self._make_policy()
         assert policy.vision_encoder is not None
@@ -287,9 +381,6 @@ class TestVLAPolicy:
         policy.reset()
 
     def test_name_and_config_class(self) -> None:
-        from yavla.models.policy import VLAPolicy
-        from yavla.models.config import PolicyConfig
-
         assert VLAPolicy.name == "vla"
         assert VLAPolicy.config_class is PolicyConfig
 
@@ -384,7 +475,7 @@ class TestPolicyBaseEnforcement:
 class TestBuildPolicyVisionSelection:
     def _make_policy_config(self) -> PolicyConfig:
         return PolicyConfig(
-            action_space=ActionSpaceSpec(names=["x"], units=["m"], limits=None),
+            action_space=ActionSpaceSpec(names=["x"] * 7, units=["m"] * 7, limits=None),
         )
 
     def test_default_uses_backbone_vision_encoder(self) -> None:

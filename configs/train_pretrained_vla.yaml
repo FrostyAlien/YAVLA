@@ -1,22 +1,22 @@
-# Smoke-test training config for a first low-cost `lerobot/aloha_sim` run.
-# This keeps the batch size and step budget small while wiring explicit
-# embodiment dimensions and adapter-style fine-tuning defaults.
+# Example config for pretrained multi-embodiment fine-tuning.
+# The dataset stays embodiment-exact (14D action/proprio), while the policy
+# keeps a wider 32D internal action/proprio width for checkpoint compatibility.
 
 training:
   dataset:
     repo_id: "lerobot/aloha_sim"
     backend: "default"
     action_chunk_size: 5
-    batch_size: 2
-    num_workers: 0
-    drop_last: true
+    batch_size: 8
+    num_workers: 4
+    persistent_workers: true
     video_backend: "pyav"
     normalize: true
     normalize_mode: "z-score"
-  num_steps: 10
-  log_freq: 1
-  save_freq: 10
-  output_dir: "outputs/train_smoke"
+  num_steps: 5000
+  log_freq: 50
+  save_freq: 500
+  output_dir: "outputs/train_pretrained_vla"
   gradient_checkpointing: true
   use_policy_preset: true
   vlm_image_resize_strategy: "warp"
@@ -25,9 +25,11 @@ training:
 
 policy:
   embodiment:
-    mode: "exact"
+    mode: "max_padded"
     action_dim: 14
     proprio_dim: 14
+    max_action_dim: 32
+    max_proprio_dim: 32
   action_head:
     chunk_len: 5
   freeze:

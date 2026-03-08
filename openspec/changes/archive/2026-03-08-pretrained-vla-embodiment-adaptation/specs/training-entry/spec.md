@@ -1,9 +1,5 @@
-# training-entry Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change mvp-training-fixes. Update Purpose after archive.
-
-## Requirements
 ### Requirement: scripts/train.py loads full TrainConfig defaults from YAML
 `scripts/train.py` SHALL treat `--config` as defaults for the full `TrainConfig`, not only `TrainingConfig`.
 
@@ -21,12 +17,3 @@ Legacy flat train-config YAML is unsupported and SHALL be rejected with a clear 
 #### Scenario: CLI override wins over YAML default
 - **WHEN** a config file sets `policy.embodiment.action_dim: 14` and the CLI passes `--policy.embodiment.action-dim 16`
 - **THEN** the effective config SHALL use `16`
-
-### Requirement: scripts/train.py seeds reproducible training before model and data construction
-`scripts/train.py` SHALL call `accelerate.utils.set_seed()` before building the policy or dataloader.
-
-For this MVP fix, the seed source SHALL be `training.dataset.seed` so the existing data seed also controls global training reproducibility.
-
-#### Scenario: Seed is applied before policy construction
-- **WHEN** `training.dataset.seed` is set to a concrete integer in the effective config
-- **THEN** `set_seed(seed)` SHALL run before `build_policy(...)` and before dataloader creation

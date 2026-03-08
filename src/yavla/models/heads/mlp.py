@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import Tensor, nn
 
@@ -105,25 +106,35 @@ class MLPRegressionHead(ActionHeadBase):
 
         target = batch.actions
         action_mask = batch.action_mask
-        if action_mask is None:
-            l1 = F.l1_loss(predicted, target)
-            return LossDict(total=l1, breakdown={"l1": l1})
-
-        if action_mask.shape != target.shape[:2]:
+        if action_mask is not None and action_mask.shape != target.shape[:2]:
             raise ValueError(
                 "MLPRegressionHead action mask shape mismatch: "
                 f"expected {target.shape[:2]}, got {tuple(action_mask.shape)}"
             )
+        action_dim_mask = batch.action_dim_mask
+        if action_dim_mask is not None and action_dim_mask.shape != target.shape[2:]:
+            raise ValueError(
+                "MLPRegressionHead action dimension mask shape mismatch: "
+                f"expected {target.shape[2:]}, got {tuple(action_dim_mask.shape)}"
+            )
 
-        valid_steps = ~action_mask
-        valid_step_count = int(valid_steps.sum().item())
-        if valid_step_count == 0:
+        if action_mask is None and action_dim_mask is None:
+            l1 = F.l1_loss(predicted, target)
+            return LossDict(total=l1, breakdown={"l1": l1})
+
+        valid = torch.ones_like(target, dtype=torch.bool)
+        if action_mask is not None:
+            valid = valid & ~action_mask.unsqueeze(-1)
+        if action_dim_mask is not None:
+            valid = valid & ~action_dim_mask.view(1, 1, -1)
+
+        valid_count = int(valid.sum().item())
+        if valid_count == 0:
             l1 = predicted.new_zeros(())
             return LossDict(total=l1, breakdown={"l1": l1})
 
         per_elem_l1 = F.l1_loss(predicted, target, reduction="none")
-        masked_l1 = per_elem_l1 * valid_steps.unsqueeze(-1)
-        l1 = masked_l1.sum() / (valid_step_count * self._config.action_dim)
+        l1 = per_elem_l1.masked_select(valid).sum() / valid_count
         return LossDict(total=l1, breakdown={"l1": l1})
 
 

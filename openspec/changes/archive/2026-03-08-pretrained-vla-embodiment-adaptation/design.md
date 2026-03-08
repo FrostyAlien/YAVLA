@@ -34,6 +34,7 @@ Decision:
 - Represent two explicit modes:
   - `exact`: active and maximum dimensions are equal.
   - `max_padded`: active dimensions may be smaller than model maximum dimensions.
+- Legacy width overrides on module sub-configs are not supported as a public configuration path.
 
 Rationale:
 - Today, action and proprio widths live in separate module configs, which makes mismatch bugs easy to introduce.
@@ -99,14 +100,15 @@ Decision:
   - active action/proprio names or equivalent embodiment descriptors
 - `from_pretrained(strict=True)` validates exact max-width compatibility.
 - `from_pretrained(strict=False)` may rebind to a smaller embodiment only when the target config is explicit and does not exceed checkpoint max widths.
-- Older checkpoints without max-width metadata are treated as `exact` mode during migration.
+- Older checkpoints or configs without embodiment-aware metadata are rejected as unsupported.
 
 Rationale:
 - Checkpoints need to say both what the model was built to support and what embodiment they were last bound to.
-- Backward-compatible migration avoids breaking existing saved policies.
+- Rejecting older formats keeps the contract explicit and avoids carrying migration logic in the runtime path.
 
 Alternatives considered:
 - Reuse only `embodiment.json` with active dimensions: rejected because it cannot describe a wider pretrained model that is temporarily bound to a smaller robot.
+- Keep backward-compatible migration from embodiment-less checkpoints: rejected because it preserves a second implicit config contract.
 - Allow non-strict rebinding without explicit target metadata: rejected because semantic mismatches become impossible to audit.
 
 ### 6. Document two supported training stories
@@ -116,6 +118,7 @@ Decision:
   - exact-dimension MVP training
   - pretrained-VLA embodiment adaptation
 - Include explicit YAML examples and checkpoint-loading examples for the pretrained path.
+- Document that flat train YAML and embodiment-less older checkpoints are unsupported.
 
 Rationale:
 - The dimension contract is subtle enough that users will otherwise guess.
@@ -127,22 +130,18 @@ Alternatives considered:
 ## Risks / Trade-offs
 
 - [Cross-cutting config change] -> Centralize embodiment dimensions in one config object and derive module widths from it to avoid duplicated state.
-- [Checkpoint compatibility churn] -> Add a config-version migration path that maps legacy checkpoints to `exact` mode.
+- [Breaking checkpoint/config cleanup] -> Fail fast on embodiment-less configs/checkpoints and document the new required format clearly.
 - [Semantic mismatch between robots] -> Require explicit embodiment metadata and keep non-strict loading opt-in.
 - [Policy-family scope creep] -> Limit the first implementation to the current MLP/readout path while keeping the public config and checkpoint contract reusable.
 - [More complex loss masking] -> Add focused unit tests for mixed timestep padding and inactive-dimension masking, including the all-masked case.
 
-## Migration Plan
+## Adoption Plan
 
-1. Add the embodiment adaptation config and wire `exact` mode as the backward-compatible default.
+1. Add the embodiment adaptation config and wire `exact` mode as the explicit default.
 2. Update policy build, loss, prediction, and checkpoint save/load paths to respect active-versus-max dimensions.
-3. Add migration logic so older checkpoints load as `exact` mode with `max_*_dim == active_*_dim`.
-4. Update training and dataset documentation with exact-mode versus pretrained-VLA guidance.
-5. Add tests for config validation, padding/masking, inference slicing, and checkpoint migration/rebinding.
-
-Rollback:
-- Revert the new embodiment adaptation fields and treat all policies as `exact` mode again.
-- Existing checkpoints saved after this change remain readable if migration keeps the old exact-mode interpretation.
+3. Reject flat training YAML and embodiment-less checkpoint/config formats with clear errors.
+4. Update training and dataset documentation with exact-mode versus pretrained-VLA guidance and the supported checkpoint/config format.
+5. Add tests for config validation, padding/masking, inference slicing, and current-format checkpoint validation/rebinding.
 
 ## Open Questions
 
