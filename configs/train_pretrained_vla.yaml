@@ -24,6 +24,8 @@ training:
   gradient_accumulation_steps: 1
 
 policy:
+  vision_encoder:
+    type: "from_backbone"
   embodiment:
     mode: "max_padded"
     action_dim: 14

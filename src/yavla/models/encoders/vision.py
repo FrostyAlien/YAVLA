@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field, replace
-from typing import Any, cast
+from typing import Annotated, Any, cast
 
 import torch
+import tyro
 from torch import Tensor, nn
 
 from yavla.models.protocols import VisionEncoderBase
@@ -27,6 +28,11 @@ class VisionEncoderConfig:
 
 
 @dataclass
+class FromBackboneVisionEncoderConfig(VisionEncoderConfig):
+    type: str = "from_backbone"
+
+
+@dataclass
 class SimplePatchVisionEncoderConfig(VisionEncoderConfig):
     type: str = "simple_patch"
     image_size: int = 224
@@ -38,13 +44,23 @@ class SimplePatchVisionEncoderConfig(VisionEncoderConfig):
 @dataclass
 class MultiTowerVisionEncoderConfig(VisionEncoderConfig):
     type: str = "multi_tower"
-    towers: list[VisionEncoderConfig] = field(default_factory=list)
+    towers: list[VisionEncoderConfigVariant] = field(default_factory=list)
     fusion: str = "concat"
     projector: str = "linear"
 
 
+type VisionEncoderConfigVariant = (
+    Annotated[FromBackboneVisionEncoderConfig, tyro.conf.subcommand("from_backbone")]
+    | Annotated[SimplePatchVisionEncoderConfig, tyro.conf.subcommand("simple_patch")]
+    | Annotated[
+    MultiTowerVisionEncoderConfig,
+    tyro.conf.subcommand("multi_tower"),
+    ]
+)
+
+
 VISION_ENCODER_CONFIG_TYPES: dict[str, type[VisionEncoderConfig]] = {
-    "from_backbone": VisionEncoderConfig,
+    "from_backbone": FromBackboneVisionEncoderConfig,
     "simple_patch": SimplePatchVisionEncoderConfig,
     "multi_tower": MultiTowerVisionEncoderConfig,
 }
@@ -59,6 +75,16 @@ def canonicalize_vision_encoder_config(
     config: VisionEncoderConfig, *, warn_on_alias: bool = False
 ) -> VisionEncoderConfig:
     canonical_type = LEGACY_BACKBONE_VISION_ENCODER_TYPES.get(config.type, config.type)
+    if canonical_type == "from_backbone":
+        if isinstance(config, FromBackboneVisionEncoderConfig):
+            return config
+        if canonical_type != config.type and warn_on_alias:
+            logging.warning(
+                "Vision encoder type %r is deprecated; use %r instead.",
+                config.type,
+                canonical_type,
+            )
+        return FromBackboneVisionEncoderConfig(model_name=config.model_name, extract_layer=config.extract_layer)
     if canonical_type == config.type:
         return config
     if warn_on_alias:

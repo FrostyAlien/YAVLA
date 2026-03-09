@@ -8,9 +8,11 @@ from pathlib import Path
 import pytest
 import scripts.train as train_script
 import torch
+import tyro
 
 from yavla.data.factory import DataConfig
 from yavla.models.config import EmbodimentConfig, PolicyConfig
+from yavla.models.encoders.vision import FromBackboneVisionEncoderConfig, SimplePatchVisionEncoderConfig
 from yavla.models.heads.mlp import MLPHeadConfig
 from yavla.models.types import ObservationBatch, TrainingBatch
 from yavla.training.config import TrainingConfig
@@ -46,7 +48,7 @@ def _make_batch(*, chunk_len: int = 5, action_dim: int = 7, proprio_dim: int = 7
     )
 
 
-def test_pop_config_flag_loads_nested_train_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pop_config_flag_loads_nested_train_config_defaults(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     config_path = tmp_path / "nested.yaml"
     config_path.write_text(
         """
@@ -82,12 +84,41 @@ policy:
     assert cfg.policy.proprio_dim == 14
     assert cfg.policy.max_action_dim == 32
     assert cfg.policy.max_proprio_dim == 32
+    assert isinstance(cfg.policy.vision_encoder, FromBackboneVisionEncoderConfig)
     assert cfg.policy.action_head.action_dim == 32
     assert cfg.policy.proprio_encoder.proprio_dim == 32
     assert cfg.policy.dt_hz == 20.0
 
 
-def test_pop_config_flag_rejects_legacy_flat_training_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pop_config_flag_loads_explicit_simple_patch_variant(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_path = tmp_path / "variant.yaml"
+    config_path.write_text(
+        """
+training:
+  dataset:
+    repo_id: "lerobot/aloha_sim"
+policy:
+  vision_encoder:
+    type: "simple_patch"
+    image_size: 128
+    patch_size: 8
+    hidden_dim: 64
+""".strip()
+    )
+    monkeypatch.setattr(sys, "argv", ["train.py", "--config", str(config_path)])
+
+    cfg = train_script._pop_config_flag()
+
+    assert cfg is not None
+    assert isinstance(cfg.policy.vision_encoder, SimplePatchVisionEncoderConfig)
+    assert cfg.policy.vision_encoder.image_size == 128
+    assert cfg.policy.vision_encoder.patch_size == 8
+    assert cfg.policy.vision_encoder.hidden_dim == 64
+
+
+def test_pop_config_flag_rejects_unsupported_top_level_training_yaml(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     config_path = tmp_path / "flat.yaml"
     config_path.write_text(
         """
@@ -102,8 +133,57 @@ num_steps: 12
     )
     monkeypatch.setattr(sys, "argv", ["train.py", "--config", str(config_path)])
 
-    with pytest.raises(SystemExit, match="legacy flat train config format is not supported"):
+    with pytest.raises(SystemExit, match="unsupported train config format"):
         train_script._pop_config_flag()
+
+
+def test_pop_config_flag_rejects_unknown_variant_type(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_path = tmp_path / "unknown_variant.yaml"
+    config_path.write_text(
+        """
+training:
+  dataset:
+    repo_id: "lerobot/aloha_sim"
+policy:
+  vision_encoder:
+    type: "does_not_exist"
+""".strip()
+    )
+    monkeypatch.setattr(sys, "argv", ["train.py", "--config", str(config_path)])
+
+    with pytest.raises(SystemExit, match="unsupported policy.vision_encoder.type"):
+        train_script._pop_config_flag()
+
+
+def test_cli_override_applies_to_variant_specific_field(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_path = tmp_path / "variant.yaml"
+    config_path.write_text(
+        """
+training:
+  dataset:
+    repo_id: "lerobot/aloha_sim"
+policy:
+  vision_encoder:
+    type: "simple_patch"
+    image_size: 128
+    patch_size: 8
+    hidden_dim: 64
+""".strip()
+    )
+    monkeypatch.setattr(sys, "argv", ["train.py", "--config", str(config_path)])
+
+    default = train_script._pop_config_flag()
+    assert default is not None
+
+    cfg = tyro.cli(
+        train_script.TrainConfig,
+        default=default,
+        args=["--policy.vision-encoder.image-size", "256"],
+        config=(tyro.conf.CascadeSubcommandArgs,),
+    )
+
+    assert isinstance(cfg.policy.vision_encoder, SimplePatchVisionEncoderConfig)
+    assert cfg.policy.vision_encoder.image_size == 256
 
 
 @pytest.mark.parametrize(

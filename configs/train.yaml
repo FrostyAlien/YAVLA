@@ -38,6 +38,8 @@ training:
   gradient_accumulation_steps: 1
 
 policy:
+  vision_encoder:
+    type: "from_backbone"
   embodiment:
     mode: "exact"
     action_dim: 14

@@ -10,6 +10,9 @@ from yavla.models.encoders.proprio import (
     proprio_registry as proprio_registry,
 )
 from yavla.models.encoders.vision import (
+    FromBackboneVisionEncoderConfig as FromBackboneVisionEncoderConfig,
+)
+from yavla.models.encoders.vision import (
     MultiTowerVisionEncoderConfig as MultiTowerVisionEncoderConfig,
 )
 from yavla.models.encoders.vision import (
@@ -17,6 +20,9 @@ from yavla.models.encoders.vision import (
 )
 from yavla.models.encoders.vision import (
     VisionEncoderConfig as VisionEncoderConfig,
+)
+from yavla.models.encoders.vision import (
+    VisionEncoderConfigVariant as VisionEncoderConfigVariant,
 )
 from yavla.models.encoders.vision import (
     canonicalize_vision_encoder_config as canonicalize_vision_encoder_config,

@@ -61,6 +61,49 @@ tyro naming conventions:
 
 Only nested `TrainConfig` YAML is supported. Legacy flat files that put `dataset:` or `optimizer:` at the top level are rejected.
 
+### Vision Encoder Variants
+
+`policy.vision_encoder` is a typed variant field.
+
+- Omit it in YAML to use the default `from_backbone` branch.
+- Write it explicitly in YAML with `type:` when you want the config file to pin the branch.
+- Select a non-default branch from the CLI with a tyro subcommand token, then pass that branch's namespaced flags.
+
+Default branch in YAML:
+
+```yaml
+policy:
+  vision_encoder:
+    type: "from_backbone"
+```
+
+Alternate branch in YAML:
+
+```yaml
+policy:
+  vision_encoder:
+    type: "simple_patch"
+    image_size: 224
+    patch_size: 16
+    hidden_dim: 256
+```
+
+Override fields on a branch already selected by YAML:
+
+```bash
+python scripts/train.py --config configs/train.yaml --policy.vision-encoder.image-size 256
+```
+
+Switch to a non-default branch from the CLI:
+
+```bash
+python scripts/train.py \
+  policy.vision-encoder:simple_patch \
+  --policy.vision-encoder.image-size 256 \
+  --policy.vision-encoder.patch-size 16 \
+  --policy.vision-encoder.hidden-dim 256
+```
+
 ### Exact MVP vs Pretrained-VLA Embodiment Adaptation
 
 YAVLA now supports two explicit embodiment modes under `policy.embodiment`:
@@ -74,6 +117,8 @@ Exact-width example:
 
 ```yaml
 policy:
+  vision_encoder:
+    type: "from_backbone"
   embodiment:
     mode: "exact"
     action_dim: 14
@@ -86,6 +131,8 @@ Pretrained-VLA example:
 
 ```yaml
 policy:
+  vision_encoder:
+    type: "from_backbone"
   embodiment:
     mode: "max_padded"
     action_dim: 14
@@ -434,46 +481,57 @@ responsible for verifying VLM compatibility).
 Complete annotated YAML showing all fields with defaults:
 
 ```yaml
-# Dataset and dataloader
-dataset:
-  repo_id: "lerobot/aloha_sim"       # HuggingFace dataset repo ID (required)
-  backend: "default"                   # "default" | "lazy" | "streaming"
-  batch_size: 32
-  num_workers: 4
-  persistent_workers: true
-  normalize: true
-  normalize_mode: "z-score"            # "z-score" | "min-max"
-  image_transforms: null               # null/omitted = auto-wire for SigLIP; [] = disable
-  video_backend: "pyav"
+training:
+  # Dataset and dataloader
+  dataset:
+    repo_id: "lerobot/aloha_sim"       # HuggingFace dataset repo ID (required)
+    backend: "default"                 # "default" | "lazy" | "streaming"
+    batch_size: 32
+    num_workers: 4
+    persistent_workers: true
+    normalize: true
+    normalize_mode: "z-score"          # "z-score" | "min-max"
+    image_transforms: null             # null/omitted = auto-wire for SigLIP; [] = disable
+    video_backend: "pyav"
 
-# Optimizer
-optimizer:
-  name: "AdamW"
-  lr: 1e-4
-  weight_decay: 0.01
-  betas: [0.9, 0.999]
-  eps: 1e-8
-  grad_clip_norm: 1.0
-  backbone_lr_scale: 0.1              # backbone trains at lr * 0.1
+  # Optimizer
+  optimizer:
+    name: "AdamW"
+    lr: 1e-4
+    weight_decay: 0.01
+    betas: [0.9, 0.999]
+    eps: 1e-8
+    grad_clip_norm: 1.0
+    backbone_lr_scale: 0.1            # backbone trains at lr * 0.1
 
-# LR scheduler
-scheduler:
-  name: "cosine"
-  warmup_steps: 1000
-  min_lr_ratio: 0.1
+  # LR scheduler
+  scheduler:
+    name: "cosine"
+    warmup_steps: 1000
+    min_lr_ratio: 0.1
 
-# Training loop
-precision: "bf16"                      # "no" | "fp16" | "bf16"
-num_steps: 100000
-log_freq: 100
-save_freq: 5000
-output_dir: "outputs/train"
-resume: false
-gradient_checkpointing: true
-use_policy_preset: true
-vlm_image_resize_strategy: "warp"      # "warp" | "letterbox"
-vlm_image_height_override: null        # set both height+width to override VLM resize target
-vlm_image_width_override: null
-wandb: false
-gradient_accumulation_steps: 1
+  # Training loop
+  precision: "bf16"                    # "no" | "fp16" | "bf16"
+  num_steps: 100000
+  log_freq: 100
+  save_freq: 5000
+  output_dir: "outputs/train"
+  resume: false
+  gradient_checkpointing: true
+  use_policy_preset: true
+  vlm_image_resize_strategy: "warp"    # "warp" | "letterbox"
+  vlm_image_height_override: null      # set both height+width to override VLM resize target
+  vlm_image_width_override: null
+  wandb: false
+  gradient_accumulation_steps: 1
+
+policy:
+  vision_encoder:
+    type: "from_backbone"              # or "simple_patch" / "multi_tower"
+  embodiment:
+    mode: "exact"
+    action_dim: 14
+    proprio_dim: 14
+  action_head:
+    chunk_len: 5
 ```

@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from yavla.models.encoders.proprio import ProprioEncoderConfig
-from yavla.models.encoders.vision import VisionEncoderConfig
+from yavla.models.encoders.vision import FromBackboneVisionEncoderConfig, VisionEncoderConfigVariant
 from yavla.models.heads.mlp import MLPHeadConfig
 from yavla.models.merger import TokenMergerConfig
 from yavla.models.types import ActionSpaceSpec, FreezeConfig, ProprioSpec
@@ -87,7 +87,7 @@ class EmbodimentConfig:
 
 @dataclass
 class PolicyConfig:
-    vision_encoder: VisionEncoderConfig = field(default_factory=VisionEncoderConfig)
+    vision_encoder: VisionEncoderConfigVariant = field(default_factory=FromBackboneVisionEncoderConfig)
     proprio_encoder: ProprioEncoderConfig = field(default_factory=ProprioEncoderConfig)
     merger: TokenMergerConfig = field(default_factory=TokenMergerConfig)
     backbone: BackboneConfig = field(default_factory=BackboneConfig)
