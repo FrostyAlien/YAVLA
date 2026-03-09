@@ -45,6 +45,15 @@ if TYPE_CHECKING:
 LOGGER = logging.getLogger(__name__)
 
 
+def _move_batch_to_device(batch: Any, accelerator: Accelerator) -> Any:
+    """Move typed YAVLA batches onto the prepared accelerator device."""
+    from yavla.models.types import TrainingBatch
+
+    if isinstance(batch, TrainingBatch):
+        return batch.to(accelerator.device, non_blocking=False)
+    return batch
+
+
 def train_step(
     policy: PolicyBase,
     batch: Any,
@@ -63,6 +72,7 @@ def train_step(
         (computed before clipping is applied). Returns 0.0 on accumulation
         micro-steps where gradients are not yet synced.
     """
+    batch = _move_batch_to_device(batch, accelerator)
     loss_dict = policy(batch)
     accelerator.backward(loss_dict.total)
     grad_norm = 0.0

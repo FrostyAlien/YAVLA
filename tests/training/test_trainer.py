@@ -72,6 +72,59 @@ class _StubPolicy(PolicyBase):
         return ActionChunk(actions=torch.zeros(1, 1, 2), dt_hz=10.0, chunk_len=1)
 
 
+class _BatchReadingPolicy(PolicyBase):
+    name = "batch-reading"
+    config_class = _StubPolicyConfig
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.backbone = _StubBackbone()
+        self.head = nn.Linear(4, 2)
+        self.last_batch: TrainingBatch | None = None
+
+    def forward(self, batch: TrainingBatch) -> LossDict:
+        self.last_batch = batch
+
+        device = self.head.weight.device
+        assert batch.actions.device == device
+        assert batch.observations.proprio.device == device
+        assert all(image.device == device for image in batch.observations.images.values())
+        if batch.action_mask is not None:
+            assert batch.action_mask.device == device
+
+        camera = batch.observations.images["cam0"]
+        image_feature = camera.mean(dim=(1, 2, 3))
+        proprio_feature = batch.observations.proprio.mean(dim=1)
+        action_feature = batch.actions.mean(dim=(1, 2))
+        mask_feature = (
+            batch.action_mask.float().mean(dim=1)
+            if batch.action_mask is not None
+            else torch.zeros_like(action_feature)
+        )
+        x = torch.stack([image_feature, proprio_feature, action_feature, mask_feature], dim=1)
+        return LossDict(total=self.head(x).pow(2).mean())
+
+    def predict(self, obs: ObservationBatch) -> ActionChunk:
+        return ActionChunk(actions=torch.zeros(1, 1, 2), dt_hz=10.0, chunk_len=1)
+
+
+def _make_training_batch() -> TrainingBatch:
+    return TrainingBatch(
+        observations=ObservationBatch(
+            images={"cam0": torch.randn(2, 3, 8, 8)},
+            proprio=torch.randn(2, 4),
+            language=["pick up the cube", "place the cube"],
+            timestamps=torch.tensor([0.0, 0.1]),
+            masks=torch.tensor([True, False]),
+        ),
+        actions=torch.randn(2, 3, 2),
+        dt_hz=10.0,
+        chunk_len=3,
+        action_mask=torch.tensor([[False, False, True], [False, False, False]]),
+        action_dim_mask=torch.tensor([False, True]),
+    )
+
+
 # -- Tests --------------------------------------------------------------------
 
 
@@ -92,6 +145,23 @@ class TestTrainStep:
         assert loss_dict.total.ndim == 0  # scalar
         assert isinstance(grad_norm, float)
         assert grad_norm >= 0.0
+
+    def test_moves_typed_batch_to_accelerator_device(self) -> None:
+        from accelerate import Accelerator
+
+        accelerator = Accelerator(cpu=True)
+        policy = _BatchReadingPolicy()
+        config = TrainingConfig()
+        optimizer = torch.optim.AdamW(policy.parameters(), lr=1e-4)
+        policy = accelerator.prepare(policy)
+
+        batch = _make_training_batch()
+        with patch.object(batch, "to", wraps=batch.to) as moved:
+            loss_dict, grad_norm = train_step(policy, batch, accelerator, optimizer, config)
+
+        moved.assert_called_once_with(accelerator.device, non_blocking=False)
+        assert isinstance(loss_dict, LossDict)
+        assert isinstance(grad_norm, float)
 
     def test_parameters_updated(self) -> None:
         from accelerate import Accelerator
@@ -268,3 +338,24 @@ class TestTrainer:
 
         # 4 optimizer steps * 2 accumulation = 8 micro-batches
         assert call_count == 8
+
+    def test_run_completes_one_step_with_typed_batch_consumption(self, tmp_path: Any) -> None:
+        from yavla.training.trainer import Trainer
+
+        policy = _BatchReadingPolicy()
+        config = TrainingConfig(
+            num_steps=1,
+            log_freq=1,
+            save_freq=100,
+            precision="no",
+            wandb=False,
+            output_dir=str(tmp_path / "out"),
+        )
+        dl = torch.utils.data.DataLoader([_make_training_batch(), _make_training_batch()], batch_size=None)
+
+        trainer = Trainer(policy, config, dl)
+        trainer.run()
+
+        assert policy.last_batch is not None
+        assert policy.last_batch.actions.device == trainer.accelerator.device
+        assert policy.last_batch.observations.proprio.device == trainer.accelerator.device

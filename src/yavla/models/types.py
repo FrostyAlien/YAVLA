@@ -2,9 +2,29 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass, field, fields, is_dataclass
+from typing import Any, cast
 
+import torch
 from torch import Tensor
+
+
+def _map_tensor_tree(value: Any, transform: Callable[[Tensor], Tensor]) -> Any:
+    """Return a copy of ``value`` with ``transform`` applied to every tensor leaf."""
+    if isinstance(value, Tensor):
+        return transform(value)
+    if isinstance(value, dict):
+        return {key: _map_tensor_tree(child, transform) for key, child in value.items()}
+    if isinstance(value, list):
+        return [_map_tensor_tree(child, transform) for child in value]
+    if isinstance(value, tuple):
+        return tuple(_map_tensor_tree(child, transform) for child in value)
+    if is_dataclass(value) and not isinstance(value, type):
+        return type(value)(
+            **{field.name: _map_tensor_tree(getattr(value, field.name), transform) for field in fields(value)}
+        )
+    return value
 
 
 @dataclass
@@ -16,6 +36,14 @@ class ObservationBatch:
     language: str | list[str] | None = None
     timestamps: Tensor | None = None  # [B]
     masks: Tensor | None = None  # [B]
+
+    def map_tensors(self, transform: Callable[[Tensor], Tensor]) -> ObservationBatch:
+        """Return a same-type copy with ``transform`` applied to every tensor leaf."""
+        return cast(ObservationBatch, _map_tensor_tree(self, transform))
+
+    def to(self, device: torch.device | str, non_blocking: bool = False) -> ObservationBatch:
+        """Return a same-type copy with all tensors moved to ``device``."""
+        return self.map_tensors(lambda tensor: tensor.to(device=device, non_blocking=non_blocking))
 
 
 @dataclass
@@ -77,6 +105,14 @@ class TrainingBatch:
     chunk_len: int
     action_mask: Tensor | None = None  # [B, chunk_len] — True = padded/invalid (action_is_pad polarity)
     action_dim_mask: Tensor | None = None  # [action_dim] — True = inactive/invalid dimension
+
+    def map_tensors(self, transform: Callable[[Tensor], Tensor]) -> TrainingBatch:
+        """Return a same-type copy with ``transform`` applied to every tensor leaf."""
+        return cast(TrainingBatch, _map_tensor_tree(self, transform))
+
+    def to(self, device: torch.device | str, non_blocking: bool = False) -> TrainingBatch:
+        """Return a same-type copy with all tensors moved to ``device``."""
+        return self.map_tensors(lambda tensor: tensor.to(device=device, non_blocking=non_blocking))
 
 
 @dataclass

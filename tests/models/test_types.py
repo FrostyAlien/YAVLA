@@ -50,6 +50,30 @@ class TestObservationBatch:
         )
         assert isinstance(obs.language, list)
 
+    def test_to_moves_nested_tensors_and_preserves_metadata(self) -> None:
+        obs = ObservationBatch(
+            images={
+                "cam0": torch.randn(2, 3, 8, 8),
+                "cam1": torch.randn(2, 3, 8, 8),
+            },
+            proprio=torch.randn(2, 7),
+            language=["pick up", "put down"],
+            timestamps=torch.tensor([0.0, 0.1]),
+            masks=torch.tensor([True, False]),
+        )
+
+        moved = obs.to("meta")
+
+        assert isinstance(moved, ObservationBatch)
+        assert moved is not obs
+        assert set(moved.images) == {"cam0", "cam1"}
+        assert all(image.device.type == "meta" for image in moved.images.values())
+        assert moved.proprio.device.type == "meta"
+        assert moved.timestamps is not None and moved.timestamps.device.type == "meta"
+        assert moved.masks is not None and moved.masks.device.type == "meta"
+        assert moved.language == ["pick up", "put down"]
+        assert obs.proprio.device.type == "cpu"
+
 
 class TestTokenBatch:
     def test_token_type_ids_assignment(self) -> None:
@@ -142,6 +166,65 @@ class TestTrainingBatch:
         )
         assert batch.actions.shape == (B, chunk_len, action_dim)
         assert isinstance(batch.observations, ObservationBatch)
+
+    def test_to_moves_all_tensor_leaves(self) -> None:
+        batch = TrainingBatch(
+            observations=ObservationBatch(
+                images={
+                    "cam0": torch.randn(2, 3, 8, 8),
+                    "cam1": torch.randn(2, 3, 8, 8),
+                },
+                proprio=torch.randn(2, 7),
+                language=["pick up", "place down"],
+                timestamps=torch.tensor([0.0, 0.1]),
+                masks=torch.tensor([True, False]),
+            ),
+            actions=torch.randn(2, 5, 7),
+            dt_hz=20.0,
+            chunk_len=5,
+            action_mask=torch.tensor([[False, False, True, True, True], [False, False, False, True, True]]),
+            action_dim_mask=torch.tensor([False, False, False, True, True, True, True]),
+        )
+
+        moved = batch.to("meta")
+
+        assert isinstance(moved, TrainingBatch)
+        assert isinstance(moved.observations, ObservationBatch)
+        assert moved.actions.device.type == "meta"
+        assert moved.observations.proprio.device.type == "meta"
+        assert all(image.device.type == "meta" for image in moved.observations.images.values())
+        assert moved.observations.timestamps is not None and moved.observations.timestamps.device.type == "meta"
+        assert moved.observations.masks is not None and moved.observations.masks.device.type == "meta"
+        assert moved.action_mask is not None and moved.action_mask.device.type == "meta"
+        assert moved.action_dim_mask is not None and moved.action_dim_mask.device.type == "meta"
+        assert moved.observations.language == ["pick up", "place down"]
+        assert moved.dt_hz == 20.0
+        assert moved.chunk_len == 5
+        assert batch.actions.device.type == "cpu"
+
+    def test_to_preserves_optional_none_fields_and_camera_keys(self) -> None:
+        batch = TrainingBatch(
+            observations=ObservationBatch(
+                images={
+                    "wrist": torch.randn(2, 3, 8, 8),
+                    "overhead": torch.randn(2, 3, 8, 8),
+                },
+                proprio=torch.randn(2, 7),
+                language="pick up the cup",
+            ),
+            actions=torch.randn(2, 5, 7),
+            dt_hz=10.0,
+            chunk_len=5,
+        )
+
+        moved = batch.to("meta")
+
+        assert set(moved.observations.images) == {"wrist", "overhead"}
+        assert moved.action_mask is None
+        assert moved.action_dim_mask is None
+        assert moved.observations.timestamps is None
+        assert moved.observations.masks is None
+        assert moved.observations.language == "pick up the cup"
 
 
 class TestActionSpaceSpec:
