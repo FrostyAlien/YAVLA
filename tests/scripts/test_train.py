@@ -213,3 +213,56 @@ def test_validate_training_dimensions_exits_on_first_batch_mismatch(
 ) -> None:
     with pytest.raises(SystemExit, match=message):
         train_script._validate_training_dimensions(cfg, batch)
+
+
+def test_build_tracker_config_serializes_full_config_and_runtime_metadata() -> None:
+    cfg = _make_train_config(chunk_len=5, action_dim=7, proprio_dim=7)
+    cfg.training.dataset.root = Path("/tmp/lerobot")
+    cfg.policy.action_space.limits = torch.arange(14, dtype=torch.float32).view(7, 2)
+
+    batch = TrainingBatch(
+        observations=ObservationBatch(
+            images={"cam0": torch.zeros(2, 3, 8, 8), "cam1": torch.zeros(2, 3, 8, 8)},
+            proprio=torch.zeros(2, 7),
+            language=["pick", "place"],
+        ),
+        actions=torch.zeros(2, 5, 7),
+        dt_hz=10.0,
+        chunk_len=5,
+    )
+    dataloader = torch.utils.data.DataLoader([batch], batch_size=None)
+    setattr(dataloader, "yavla_backend", "lazy")
+    setattr(dataloader, "yavla_backend_reason", "explicit backend")
+
+    tracker_config = train_script._build_tracker_config(cfg, batch, dataloader)
+
+    assert tracker_config["training"]["dataset"]["repo_id"] == "dummy/repo"
+    assert tracker_config["training"]["dataset"]["root"] == "/tmp/lerobot"
+    assert tracker_config["training"]["optimizer"]["betas"] == [0.9, 0.999]
+    assert tracker_config["policy"]["action_space"]["limits"][0] == [0.0, 1.0]
+    assert tracker_config["runtime"] == {
+        "data_backend": "lazy",
+        "data_backend_reason": "explicit backend",
+        "first_batch_action_dim": 7,
+        "first_batch_chunk_len": 5,
+        "first_batch_proprio_dim": 7,
+        "first_batch_num_cameras": 2,
+    }
+
+
+def test_serialize_tracker_value_handles_tensor_and_path_leaves() -> None:
+    payload = {
+        "path": Path("/tmp/example"),
+        "scalar_tensor": torch.tensor(3.5),
+        "matrix_tensor": torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
+        "tuple_value": (1, 2, 3),
+    }
+
+    serialized = train_script._serialize_tracker_value(payload)
+
+    assert serialized == {
+        "path": "/tmp/example",
+        "scalar_tensor": 3.5,
+        "matrix_tensor": [[1.0, 2.0], [3.0, 4.0]],
+        "tuple_value": [1, 2, 3],
+    }

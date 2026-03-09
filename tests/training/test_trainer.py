@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
+import pytest
 import torch
 from torch import Tensor, nn
 
@@ -17,9 +18,8 @@ from yavla.models.protocols import (
     PolicyBase,
 )
 from yavla.models.types import ActionChunk, LossDict, ObservationBatch, TrainingBatch
-from yavla.training.config import TrainingConfig
+from yavla.training.config import OptimizerConfig, TrainingConfig
 from yavla.training.trainer import train_step
-
 
 # -- Stubs --------------------------------------------------------------------
 
@@ -43,8 +43,8 @@ class _StubBackbone(BackboneBase):
         return 4
 
     def embed_language(self, texts: list[str]) -> tuple[Tensor, Tensor]:
-        B = len(texts)
-        return torch.zeros(B, 1, 4), torch.ones(B, 1)
+        batch_size = len(texts)
+        return torch.zeros(batch_size, 1, 4), torch.ones(batch_size, 1)
 
     def forward(self, inputs_embeds: Tensor, attention_mask: Tensor, token_type_ids: Tensor) -> BackboneOutput:
         return BackboneOutput(
@@ -108,6 +108,24 @@ class _BatchReadingPolicy(PolicyBase):
         return ActionChunk(actions=torch.zeros(1, 1, 2), dt_hz=10.0, chunk_len=1)
 
 
+class _ScalarLossPolicy(PolicyBase):
+    name = "scalar-loss"
+    config_class = _StubPolicyConfig
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.backbone = _StubBackbone()
+        self.scale = nn.Parameter(torch.tensor(1.0))
+
+    def forward(self, batch: TrainingBatch) -> LossDict:
+        marker = batch.observations.proprio[:, 0].mean()
+        loss = self.scale * marker
+        return LossDict(total=loss, breakdown={"marker": loss})
+
+    def predict(self, obs: ObservationBatch) -> ActionChunk:
+        return ActionChunk(actions=torch.zeros(1, 1, 2), dt_hz=10.0, chunk_len=1)
+
+
 def _make_training_batch() -> TrainingBatch:
     return TrainingBatch(
         observations=ObservationBatch(
@@ -122,6 +140,35 @@ def _make_training_batch() -> TrainingBatch:
         chunk_len=3,
         action_mask=torch.tensor([[False, False, True], [False, False, False]]),
         action_dim_mask=torch.tensor([False, True]),
+    )
+
+
+def _make_value_batch(
+    *,
+    batch_size: int,
+    marker: float,
+    chunk_len: int = 3,
+    action_dim: int = 2,
+    include_masks: bool = False,
+) -> TrainingBatch:
+    action_mask = None
+    action_dim_mask = None
+    if include_masks:
+        action_mask = torch.zeros(batch_size, chunk_len, dtype=torch.bool)
+        action_mask[0, -1] = True
+        action_dim_mask = torch.tensor([False, True], dtype=torch.bool)
+
+    return TrainingBatch(
+        observations=ObservationBatch(
+            images={},
+            proprio=torch.full((batch_size, 4), marker),
+            language=["task"] * batch_size,
+        ),
+        actions=torch.zeros(batch_size, chunk_len, action_dim),
+        dt_hz=10.0,
+        chunk_len=chunk_len,
+        action_mask=action_mask,
+        action_dim_mask=action_dim_mask,
     )
 
 
@@ -359,3 +406,235 @@ class TestTrainer:
         assert policy.last_batch is not None
         assert policy.last_batch.actions.device == trainer.accelerator.device
         assert policy.last_batch.observations.proprio.device == trainer.accelerator.device
+
+    def test_wandb_logs_tracker_config_and_model_metrics(self, tmp_path: Any) -> None:
+        from yavla.training.trainer import Trainer
+
+        policy = _ScalarLossPolicy()
+        config = TrainingConfig(
+            num_steps=1,
+            log_freq=1,
+            save_freq=100,
+            precision="no",
+            wandb=True,
+            output_dir=str(tmp_path / "out"),
+            optimizer=OptimizerConfig(lr=0.0),
+        )
+        tracker_config = {"training": {"num_steps": 1}, "policy": {"name": "scalar-loss"}}
+        dl = torch.utils.data.DataLoader([_make_value_batch(batch_size=2, marker=1.0)], batch_size=None)
+        trainer = Trainer(policy, config, dl, tracker_config=tracker_config)
+
+        with (
+            patch.object(trainer.accelerator, "init_trackers") as init_trackers,
+            patch.object(trainer.accelerator, "log") as log_metrics,
+            patch.object(trainer.accelerator, "end_training"),
+            patch.object(trainer, "save_checkpoint"),
+        ):
+            trainer.run()
+
+        init_trackers.assert_called_once_with("yavla", config=tracker_config)
+        first_log = log_metrics.call_args_list[0]
+        assert first_log.kwargs["step"] == 0
+        assert "model/params_total" in first_log.args[0]
+        assert "model/params_trainable_fraction" in first_log.args[0]
+
+    def test_wandb_logs_epoch_and_advances_data_epoch_on_rollover(self, tmp_path: Any) -> None:
+        from yavla.training.trainer import Trainer
+
+        policy = _ScalarLossPolicy()
+        config = TrainingConfig(
+            num_steps=3,
+            log_freq=1,
+            save_freq=100,
+            precision="no",
+            wandb=True,
+            output_dir=str(tmp_path / "out"),
+            optimizer=OptimizerConfig(lr=0.0),
+        )
+        batches = [
+            _make_value_batch(batch_size=2, marker=1.0),
+            _make_value_batch(batch_size=2, marker=2.0),
+        ]
+        dl = torch.utils.data.DataLoader(batches, batch_size=None)
+        trainer = Trainer(policy, config, dl)
+
+        with (
+            patch("yavla.training.trainer.advance_data_epoch") as advance_epoch,
+            patch.object(trainer.accelerator, "init_trackers"),
+            patch.object(trainer.accelerator, "log") as log_metrics,
+            patch.object(trainer.accelerator, "end_training"),
+            patch.object(trainer, "save_checkpoint"),
+        ):
+            trainer.run()
+
+        train_logs = [call.args[0] for call in log_metrics.call_args_list if "train/epoch" in call.args[0]]
+        assert [metrics["train/epoch"] for metrics in train_logs] == [0.5, 1.0, 1.5]
+        assert advance_epoch.call_args_list == [
+            call(trainer.train_dataloader, 0),
+            call(trainer.train_dataloader, 1),
+        ]
+
+    def test_resume_derives_epoch_and_in_epoch_offset_from_dataloader_length(self, tmp_path: Any) -> None:
+        from yavla.training.trainer import Trainer
+
+        policy = _ScalarLossPolicy()
+        config = TrainingConfig(
+            num_steps=5,
+            log_freq=1,
+            save_freq=100,
+            precision="no",
+            wandb=True,
+            output_dir=str(tmp_path / "out"),
+            optimizer=OptimizerConfig(lr=0.0),
+            resume=True,
+        )
+        batches = [
+            _make_value_batch(batch_size=2, marker=1.0),
+            _make_value_batch(batch_size=2, marker=2.0),
+        ]
+        dl = torch.utils.data.DataLoader(batches, batch_size=None)
+        trainer = Trainer(policy, config, dl)
+
+        with (
+            patch.object(trainer, "_load_latest_checkpoint", return_value=3),
+            patch("yavla.training.trainer.advance_data_epoch") as advance_epoch,
+            patch.object(trainer.accelerator, "init_trackers"),
+            patch.object(trainer.accelerator, "log") as log_metrics,
+            patch.object(trainer.accelerator, "end_training"),
+            patch.object(trainer, "save_checkpoint"),
+        ):
+            trainer.run()
+
+        train_logs = [call.args[0] for call in log_metrics.call_args_list if "train/epoch" in call.args[0]]
+        assert [metrics["train/epoch"] for metrics in train_logs] == [2.0, 2.5]
+        assert advance_epoch.call_args_list == [
+            call(trainer.train_dataloader, 1),
+            call(trainer.train_dataloader, 2),
+        ]
+
+    def test_gradient_accumulation_logs_weighted_losses(self, tmp_path: Any) -> None:
+        from yavla.training.trainer import Trainer
+
+        policy = _ScalarLossPolicy()
+        config = TrainingConfig(
+            num_steps=1,
+            log_freq=1,
+            save_freq=100,
+            precision="no",
+            wandb=True,
+            output_dir=str(tmp_path / "out"),
+            gradient_accumulation_steps=2,
+            optimizer=OptimizerConfig(lr=0.0),
+        )
+        dl = torch.utils.data.DataLoader(
+            [
+                _make_value_batch(batch_size=1, marker=1.0),
+                _make_value_batch(batch_size=3, marker=3.0),
+            ],
+            batch_size=None,
+        )
+        trainer = Trainer(policy, config, dl)
+
+        with (
+            patch.object(trainer.accelerator, "init_trackers"),
+            patch.object(trainer.accelerator, "log") as log_metrics,
+            patch.object(trainer.accelerator, "end_training"),
+            patch.object(trainer, "save_checkpoint"),
+        ):
+            trainer.run()
+
+        train_log = next(call.args[0] for call in log_metrics.call_args_list if "train/loss" in call.args[0])
+        assert train_log["train/loss"] == pytest.approx(2.5)
+        assert train_log["train/marker"] == pytest.approx(2.5)
+        assert train_log["train/global_batch_size"] == pytest.approx(4.0)
+        assert train_log["train/samples_seen"] == pytest.approx(4.0)
+        assert train_log["train/action_valid_fraction"] == pytest.approx(1.0)
+
+    def test_typed_batch_logs_action_coverage_metrics(self, tmp_path: Any) -> None:
+        from yavla.training.trainer import Trainer
+
+        policy = _ScalarLossPolicy()
+        config = TrainingConfig(
+            num_steps=1,
+            log_freq=1,
+            save_freq=100,
+            precision="no",
+            wandb=True,
+            output_dir=str(tmp_path / "out"),
+            optimizer=OptimizerConfig(lr=0.0),
+        )
+        dl = torch.utils.data.DataLoader(
+            [_make_value_batch(batch_size=2, marker=1.0, include_masks=True)],
+            batch_size=None,
+        )
+        trainer = Trainer(policy, config, dl)
+
+        with (
+            patch.object(trainer.accelerator, "init_trackers"),
+            patch.object(trainer.accelerator, "log") as log_metrics,
+            patch.object(trainer.accelerator, "end_training"),
+            patch.object(trainer, "save_checkpoint"),
+        ):
+            trainer.run()
+
+        train_log = next(call.args[0] for call in log_metrics.call_args_list if "train/loss" in call.args[0])
+        assert train_log["train/action_valid_fraction"] == pytest.approx(5.0 / 6.0)
+        assert train_log["train/action_dim_active_fraction"] == pytest.approx(0.5)
+
+    def test_console_step_log_adds_epoch_only(self, tmp_path: Any) -> None:
+        from yavla.training.trainer import Trainer
+
+        policy = _ScalarLossPolicy()
+        config = TrainingConfig(
+            num_steps=1,
+            log_freq=1,
+            save_freq=100,
+            precision="no",
+            wandb=False,
+            output_dir=str(tmp_path / "out"),
+            optimizer=OptimizerConfig(lr=0.0),
+        )
+        dl = torch.utils.data.DataLoader(
+            [
+                _make_value_batch(batch_size=2, marker=1.0),
+                _make_value_batch(batch_size=2, marker=2.0),
+            ],
+            batch_size=None,
+        )
+        trainer = Trainer(policy, config, dl)
+
+        with (
+            patch.object(trainer.accelerator, "print") as print_step,
+            patch.object(trainer, "save_checkpoint"),
+        ):
+            trainer.run()
+
+        step_lines = [call.args[0] for call in print_step.call_args_list if str(call.args[0]).startswith("step ")]
+        assert step_lines == ["step 1/1  epoch=0.5  loss=1.0000  lr=0.00e+00  grad_norm=1.00"]
+
+    def test_generic_batch_logging_omits_training_batch_specific_metrics(self, tmp_path: Any) -> None:
+        from yavla.training.trainer import Trainer
+
+        policy = _StubPolicy()
+        config = TrainingConfig(
+            num_steps=1,
+            log_freq=1,
+            save_freq=100,
+            precision="no",
+            wandb=True,
+            output_dir=str(tmp_path / "out"),
+        )
+        dl = torch.utils.data.DataLoader([torch.ones(4)] * 4, batch_size=2)
+        trainer = Trainer(policy, config, dl)
+
+        with (
+            patch.object(trainer.accelerator, "init_trackers"),
+            patch.object(trainer.accelerator, "log") as log_metrics,
+            patch.object(trainer.accelerator, "end_training"),
+            patch.object(trainer, "save_checkpoint"),
+        ):
+            trainer.run()
+
+        train_log = next(call.args[0] for call in log_metrics.call_args_list if "train/loss" in call.args[0])
+        assert "train/action_valid_fraction" not in train_log
+        assert "train/action_dim_active_fraction" not in train_log

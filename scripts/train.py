@@ -20,11 +20,14 @@ Compatible with both single-process and distributed launches::
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+import torch
 import tyro
 
 from yavla.models.policy import build_policy
@@ -34,6 +37,7 @@ from yavla.training.entry_config import TrainConfig, load_train_config_file
 from yavla.training.siglip_preprocess import autowire_siglip_image_transforms
 
 LOGGER = logging.getLogger(__name__)
+
 
 def _pop_config_flag() -> TrainConfig | None:
     """Extract ``--config <path>`` before tyro sees it, return YAML defaults."""
@@ -100,6 +104,46 @@ def _validate_training_dimensions(cfg: TrainConfig, batch: TrainingBatch) -> Non
         )
 
 
+def _serialize_tracker_value(value: Any) -> Any:
+    """Convert config values to W&B-safe Python primitives."""
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return {
+            field.name: _serialize_tracker_value(getattr(value, field.name))
+            for field in dataclasses.fields(value)
+        }
+    if isinstance(value, Mapping):
+        return {str(key): _serialize_tracker_value(child) for key, child in value.items()}
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, torch.Tensor):
+        detached = value.detach().cpu()
+        return detached.item() if detached.ndim == 0 else detached.tolist()
+    if isinstance(value, tuple):
+        return [_serialize_tracker_value(child) for child in value]
+    if isinstance(value, list):
+        return [_serialize_tracker_value(child) for child in value]
+    if isinstance(value, (str, bool, int, float)) or value is None:
+        return value
+    return str(value)
+
+
+def _build_tracker_config(cfg: TrainConfig, batch: TrainingBatch, dataloader: Any) -> dict[str, Any]:
+    """Build the full tracker config payload for W&B initialization."""
+    serialized = _serialize_tracker_value(cfg)
+    if not isinstance(serialized, dict):
+        raise TypeError(f"expected serialized TrainConfig dict, got {type(serialized).__name__}")
+
+    serialized["runtime"] = {
+        "data_backend": str(getattr(dataloader, "yavla_backend", "unknown")),
+        "data_backend_reason": str(getattr(dataloader, "yavla_backend_reason", "n/a")),
+        "first_batch_action_dim": int(batch.actions.shape[2]),
+        "first_batch_chunk_len": int(batch.actions.shape[1]),
+        "first_batch_proprio_dim": int(batch.observations.proprio.shape[-1]),
+        "first_batch_num_cameras": int(len(batch.observations.images)),
+    }
+    return serialized
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
@@ -128,9 +172,11 @@ def main() -> None:
     dataloader = create_training_dataloader(
         cfg.training, dt_hz=cfg.policy.dt_hz, chunk_len=cfg.policy.action_head.chunk_len
     )
-    _validate_training_dimensions(cfg, _peek_training_batch(dataloader))
+    first_batch = _peek_training_batch(dataloader)
+    _validate_training_dimensions(cfg, first_batch)
 
-    trainer = Trainer(policy, cfg.training, dataloader)
+    tracker_config = _build_tracker_config(cfg, first_batch, dataloader) if cfg.training.wandb else None
+    trainer = Trainer(policy, cfg.training, dataloader, tracker_config=tracker_config)
     LOGGER.info("Starting training for %d steps", cfg.training.num_steps)
     trainer.run()
 

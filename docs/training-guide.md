@@ -362,7 +362,7 @@ policy = VLAPolicy.from_pretrained(
 Every `log_freq` steps, the trainer prints:
 
 ```
-step 100/100000  loss=0.4321  lr=1.00e-04  grad_norm=0.85
+step 100/100000  epoch=0.325  loss=0.4321  lr=1.00e-04  grad_norm=0.85
 ```
 
 ### WandB
@@ -372,9 +372,18 @@ Enable with `--training.wandb True`. Metrics logged per optimizer step:
 | Metric | Description |
 |--------|-------------|
 | `train/loss` | Total loss |
-| `train/lr` | Current learning rate |
+| `train/lr` | Main (non-backbone) learning rate |
+| `train/lr_main` | Main (non-backbone) learning rate |
+| `train/lr_backbone` | Backbone learning rate |
 | `train/grad_norm` | Gradient norm (before clipping) |
 | `train/{component}` | Per-component loss breakdown from `LossDict.breakdown` |
+| `train/global_batch_size` | Effective global batch size for the optimizer step |
+| `train/samples_seen` | Cumulative samples processed so far |
+| `train/action_valid_fraction` | Fraction of non-padded action timesteps in the step |
+| `train/action_dim_active_fraction` | Fraction of active action dimensions when available |
+| `train/epoch` | Fractional epoch progress when dataloader length is known; integer fallback otherwise |
+
+W&B also receives the full composed train config (`training`, `policy`, and runtime metadata such as backend choice and first-batch shapes), plus one-time `model/*` parameter-count metrics at run startup.
 
 The project name is `"yavla"`.
 
