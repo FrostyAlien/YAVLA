@@ -382,8 +382,19 @@ Enable with `--training.wandb True`. Metrics logged per optimizer step:
 | `train/action_valid_fraction` | Fraction of non-padded action timesteps in the step |
 | `train/action_dim_active_fraction` | Fraction of active action dimensions when available |
 | `train/epoch` | Fractional epoch progress when dataloader length is known; integer fallback otherwise |
+| `perf/step_time_s` | Average optimizer-step wall time over the current logging window |
+| `perf/samples_per_sec` | Effective global samples processed per second over the current logging window |
+| `perf/data_wait_time_s` | Average trainer-visible time spent waiting for the next batch over the current logging window |
+| `perf/compute_time_s` | Average non-wait remainder of optimizer-step wall time over the current logging window |
+| `perf/data_wait_fraction` | Fraction of logging-window step time attributed to trainer-visible batch wait |
+
+The `perf/*` metrics follow the existing `log_freq` cadence and are aggregated over optimizer steps since the previous log
+event. `perf/data_wait_time_s` measures stall observed by the trainer while fetching batches, not per-transform latency
+inside DataLoader workers.
 
 W&B also receives the full composed train config (`training`, `policy`, and runtime metadata such as backend choice and first-batch shapes), plus one-time `model/*` parameter-count metrics at run startup.
+
+For offline dataloader-only benchmarking and optional transform timing, use [`scripts/bench_dataloader.py`](../scripts/bench_dataloader.py) and the dataset-layer benchmark docs instead of the training loop metrics.
 
 The project name is `"yavla"`.
 

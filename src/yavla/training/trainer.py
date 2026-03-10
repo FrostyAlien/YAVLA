@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from dataclasses import dataclass, field
 from numbers import Integral
 from pathlib import Path
@@ -257,6 +258,37 @@ class _StepMetricAccumulator:
         return metrics
 
 
+@dataclass(slots=True)
+class _PerformanceWindowAccumulator:
+    """Aggregate trainer-visible performance metrics across a log window."""
+
+    step_count: int = 0
+    total_step_time_s: float = 0.0
+    total_data_wait_time_s: float = 0.0
+    total_samples: int = 0
+
+    def add_step(self, *, step_time_s: float, data_wait_time_s: float, global_samples: int) -> None:
+        self.step_count += 1
+        self.total_step_time_s += float(step_time_s)
+        self.total_data_wait_time_s += float(data_wait_time_s)
+        self.total_samples += int(global_samples)
+
+    def to_metrics(self) -> dict[str, float]:
+        """Emit averaged performance metrics for the completed log window."""
+        steps = max(self.step_count, 1)
+        total_step_time = max(self.total_step_time_s, 0.0)
+        total_data_wait = max(min(self.total_data_wait_time_s, total_step_time), 0.0)
+        total_compute_time = max(total_step_time - total_data_wait, 0.0)
+
+        return {
+            "perf/step_time_s": total_step_time / steps,
+            "perf/samples_per_sec": (self.total_samples / total_step_time) if total_step_time > 0.0 else 0.0,
+            "perf/data_wait_time_s": total_data_wait / steps,
+            "perf/compute_time_s": total_compute_time / steps,
+            "perf/data_wait_fraction": (total_data_wait / total_step_time) if total_step_time > 0.0 else 0.0,
+        }
+
+
 def train_step(
     policy: PolicyBase,
     batch: Any,
@@ -434,13 +466,18 @@ class Trainer:
         completed_steps = start_step
         self._samples_seen = _estimate_start_samples(self.train_dataloader, self.accelerator, cfg, start_step)
         data_iter = self._initial_data_iterator(start_step=start_step)
+        perf_window = _PerformanceWindowAccumulator()
 
         while completed_steps < cfg.num_steps:
             step_metrics = _StepMetricAccumulator()
             grad_norm = 0.0
+            step_start_time = time.perf_counter()
+            data_wait_time_s = 0.0
 
             while True:
+                wait_start_time = time.perf_counter()
                 batch, data_iter = self._next_batch(data_iter)
+                data_wait_time_s += time.perf_counter() - wait_start_time
 
                 with self.accelerator.accumulate(self.policy):
                     loss_dict, grad_norm = train_step(
@@ -453,8 +490,15 @@ class Trainer:
                 if self.accelerator.sync_gradients:
                     break
 
+            step_time_s = time.perf_counter() - step_start_time
             completed_steps += 1
-            self._samples_seen += step_metrics.global_batch_size(self.accelerator)
+            global_samples = step_metrics.global_batch_size(self.accelerator)
+            self._samples_seen += global_samples
+            perf_window.add_step(
+                step_time_s=step_time_s,
+                data_wait_time_s=data_wait_time_s,
+                global_samples=global_samples,
+            )
 
             # Logging (only on optimizer steps)
             if completed_steps % cfg.log_freq == 0:
@@ -467,6 +511,7 @@ class Trainer:
                     epoch=self._logged_epoch(),
                     samples_seen=self._samples_seen,
                 )
+                metrics.update(perf_window.to_metrics())
                 self.accelerator.print(
                     f"step {completed_steps}/{cfg.num_steps}"
                     f"  epoch={_format_epoch_value(metrics['train/epoch'])}"
@@ -475,6 +520,7 @@ class Trainer:
                 )
                 if cfg.wandb:
                     self.accelerator.log(metrics, step=completed_steps)
+                perf_window = _PerformanceWindowAccumulator()
 
             # Checkpoint (only on optimizer steps)
             if completed_steps % cfg.save_freq == 0:

@@ -550,6 +550,137 @@ class TestTrainer:
         assert train_log["train/samples_seen"] == pytest.approx(4.0)
         assert train_log["train/action_valid_fraction"] == pytest.approx(1.0)
 
+    def test_wandb_logs_performance_metrics(self, tmp_path: Any) -> None:
+        from yavla.training.trainer import Trainer
+
+        policy = _ScalarLossPolicy()
+        config = TrainingConfig(
+            num_steps=1,
+            log_freq=1,
+            save_freq=100,
+            precision="no",
+            wandb=True,
+            output_dir=str(tmp_path / "out"),
+            optimizer=OptimizerConfig(lr=0.0),
+        )
+        dl = torch.utils.data.DataLoader([_make_value_batch(batch_size=2, marker=1.0)], batch_size=None)
+        trainer = Trainer(policy, config, dl)
+
+        with (
+            patch.object(trainer.accelerator, "init_trackers"),
+            patch.object(trainer.accelerator, "log") as log_metrics,
+            patch.object(trainer.accelerator, "end_training"),
+            patch.object(trainer, "save_checkpoint"),
+            patch("yavla.training.trainer.time.perf_counter", side_effect=[0.0, 0.1, 0.3, 1.0]),
+        ):
+            trainer.run()
+
+        train_log = next(call.args[0] for call in log_metrics.call_args_list if "train/loss" in call.args[0])
+        assert train_log["perf/step_time_s"] == pytest.approx(1.0)
+        assert train_log["perf/samples_per_sec"] == pytest.approx(2.0)
+        assert train_log["perf/data_wait_time_s"] == pytest.approx(0.2)
+        assert train_log["perf/compute_time_s"] == pytest.approx(0.8)
+        assert train_log["perf/data_wait_fraction"] == pytest.approx(0.2)
+
+    def test_gradient_accumulation_logs_optimizer_step_performance(self, tmp_path: Any) -> None:
+        from yavla.training.trainer import Trainer
+
+        policy = _ScalarLossPolicy()
+        config = TrainingConfig(
+            num_steps=1,
+            log_freq=1,
+            save_freq=100,
+            precision="no",
+            wandb=True,
+            output_dir=str(tmp_path / "out"),
+            gradient_accumulation_steps=2,
+            optimizer=OptimizerConfig(lr=0.0),
+        )
+        dl = torch.utils.data.DataLoader(
+            [
+                _make_value_batch(batch_size=1, marker=1.0),
+                _make_value_batch(batch_size=3, marker=3.0),
+            ],
+            batch_size=None,
+        )
+        trainer = Trainer(policy, config, dl)
+
+        with (
+            patch.object(trainer.accelerator, "init_trackers"),
+            patch.object(trainer.accelerator, "log") as log_metrics,
+            patch.object(trainer.accelerator, "end_training"),
+            patch.object(trainer, "save_checkpoint"),
+            patch(
+                "yavla.training.trainer.time.perf_counter",
+                side_effect=[0.0, 0.1, 0.3, 0.4, 0.8, 1.5],
+            ),
+        ):
+            trainer.run()
+
+        train_log = next(call.args[0] for call in log_metrics.call_args_list if "train/loss" in call.args[0])
+        assert train_log["perf/step_time_s"] == pytest.approx(1.5)
+        assert train_log["perf/samples_per_sec"] == pytest.approx(4.0 / 1.5)
+        assert train_log["perf/data_wait_time_s"] == pytest.approx(0.6)
+        assert train_log["perf/compute_time_s"] == pytest.approx(0.9)
+        assert train_log["perf/data_wait_fraction"] == pytest.approx(0.4)
+
+    def test_performance_metrics_are_windowed_on_log_cadence(self, tmp_path: Any) -> None:
+        from yavla.training.trainer import Trainer
+
+        policy = _ScalarLossPolicy()
+        config = TrainingConfig(
+            num_steps=3,
+            log_freq=2,
+            save_freq=100,
+            precision="no",
+            wandb=True,
+            output_dir=str(tmp_path / "out"),
+            optimizer=OptimizerConfig(lr=0.0),
+        )
+        dl = torch.utils.data.DataLoader(
+            [
+                _make_value_batch(batch_size=2, marker=1.0),
+                _make_value_batch(batch_size=2, marker=2.0),
+                _make_value_batch(batch_size=2, marker=3.0),
+            ],
+            batch_size=None,
+        )
+        trainer = Trainer(policy, config, dl)
+
+        with (
+            patch.object(trainer.accelerator, "init_trackers"),
+            patch.object(trainer.accelerator, "log") as log_metrics,
+            patch.object(trainer.accelerator, "end_training"),
+            patch.object(trainer, "save_checkpoint"),
+            patch(
+                "yavla.training.trainer.time.perf_counter",
+                side_effect=[
+                    0.0,
+                    0.1,
+                    0.2,
+                    0.8,
+                    1.0,
+                    1.2,
+                    1.5,
+                    2.0,
+                    3.0,
+                    3.1,
+                    3.2,
+                    3.8,
+                ],
+            ),
+        ):
+            trainer.run()
+
+        train_logs = [call.args[0] for call in log_metrics.call_args_list if "train/loss" in call.args[0]]
+        assert len(train_logs) == 1
+        train_log = train_logs[0]
+        assert train_log["perf/step_time_s"] == pytest.approx(0.9)
+        assert train_log["perf/samples_per_sec"] == pytest.approx(4.0 / 1.8)
+        assert train_log["perf/data_wait_time_s"] == pytest.approx(0.2)
+        assert train_log["perf/compute_time_s"] == pytest.approx(0.7)
+        assert train_log["perf/data_wait_fraction"] == pytest.approx(0.4 / 1.8)
+
     def test_typed_batch_logs_action_coverage_metrics(self, tmp_path: Any) -> None:
         from yavla.training.trainer import Trainer
 

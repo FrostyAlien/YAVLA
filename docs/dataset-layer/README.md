@@ -28,4 +28,7 @@ The documentation in this folder is explanatory. The normative (source-of-truth)
 - [`openspec/specs/data-transforms/spec.md`](../../openspec/specs/data-transforms/spec.md) — transform pipeline protocol and built-in transforms
 - [`openspec/specs/dataloader-benchmark/spec.md`](../../openspec/specs/dataloader-benchmark/spec.md) — dataloader performance benchmark
 
+The dataloader benchmark is an offline measurement tool for backend throughput and optional transform timing. For training-time
+throughput and trainer-visible batch wait metrics, see the training guide's W&B logging section.
+
 When docs and specs disagree, specs are authoritative.
