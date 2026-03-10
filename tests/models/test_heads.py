@@ -78,6 +78,26 @@ class TestMLPRegressionHead:
             chunk_len=chunk_len,
         )
 
+    def _assert_backward_safe_zero_loss(
+        self,
+        head: MLPRegressionHead,
+        bo: BackboneOutput,
+        batch: TrainingBatch,
+        predicted: torch.Tensor,
+    ) -> None:
+        with patch.object(head, "_pool_and_predict", return_value=predicted):
+            loss = head.compute_loss(bo, batch)
+
+        assert torch.isfinite(loss.total)
+        assert loss.total.item() == pytest.approx(0.0, abs=1e-6)
+        assert loss.total.requires_grad
+
+        loss.total.backward()
+
+        assert predicted.grad is not None
+        assert predicted.grad.shape == predicted.shape
+        assert torch.allclose(predicted.grad, torch.zeros_like(predicted.grad))
+
     def test_requirements(self) -> None:
         head = self._make_head()
         req = head.requirements
@@ -139,12 +159,9 @@ class TestMLPRegressionHead:
             chunk_len=3,
             action_mask=torch.ones(1, 3, dtype=torch.bool),
         )
+        predicted = torch.zeros(1, 3, 2, requires_grad=True)
 
-        with patch.object(head, "_pool_and_predict", return_value=torch.zeros(1, 3, 2)):
-            loss = head.compute_loss(bo, batch)
-
-        assert torch.isfinite(loss.total)
-        assert loss.total.item() == pytest.approx(0.0, abs=1e-6)
+        self._assert_backward_safe_zero_loss(head, bo, batch, predicted)
 
     def test_compute_loss_masks_inactive_action_dimensions(self) -> None:
         head = self._make_head(backbone_dim=128, chunk_len=2, action_dim=4)
@@ -197,12 +214,24 @@ class TestMLPRegressionHead:
             chunk_len=2,
             action_dim_mask=torch.ones(3, dtype=torch.bool),
         )
+        predicted = torch.zeros(1, 2, 3, requires_grad=True)
 
-        with patch.object(head, "_pool_and_predict", return_value=torch.zeros(1, 2, 3)):
-            loss = head.compute_loss(bo, batch)
+        self._assert_backward_safe_zero_loss(head, bo, batch, predicted)
 
-        assert torch.isfinite(loss.total)
-        assert loss.total.item() == pytest.approx(0.0, abs=1e-6)
+    def test_compute_loss_returns_zero_for_fully_combined_masked_chunk(self) -> None:
+        head = self._make_head(backbone_dim=128, chunk_len=2, action_dim=3)
+        bo = self._make_backbone_output(batch_size=1)
+        batch = TrainingBatch(
+            observations=ObservationBatch(images={}, proprio=torch.zeros(1, 7)),
+            actions=torch.ones(1, 2, 3),
+            dt_hz=10.0,
+            chunk_len=2,
+            action_mask=torch.tensor([[False, True]]),
+            action_dim_mask=torch.ones(3, dtype=torch.bool),
+        )
+        predicted = torch.zeros(1, 2, 3, requires_grad=True)
+
+        self._assert_backward_safe_zero_loss(head, bo, batch, predicted)
 
     def test_compute_loss_rejects_chunk_length_mismatch(self) -> None:
         head = self._make_head(chunk_len=5, action_dim=7)

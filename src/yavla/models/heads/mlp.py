@@ -128,13 +128,9 @@ class MLPRegressionHead(ActionHeadBase):
         if action_dim_mask is not None:
             valid = valid & ~action_dim_mask.view(1, 1, -1)
 
-        valid_count = int(valid.sum().item())
-        if valid_count == 0:
-            l1 = predicted.new_zeros(())
-            return LossDict(total=l1, breakdown={"l1": l1})
-
         per_elem_l1 = F.l1_loss(predicted, target, reduction="none")
-        l1 = per_elem_l1.masked_select(valid).sum() / valid_count
+        valid_f = valid.to(per_elem_l1.dtype)
+        l1 = (per_elem_l1 * valid_f).sum() / valid_f.sum().clamp_min(1.0)
         return LossDict(total=l1, breakdown={"l1": l1})
 
 
